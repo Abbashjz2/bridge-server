@@ -762,24 +762,58 @@ async function monitorTick() {
     const alive = await confirmedPing(d.ip);
     const status = alive ? 'online' : 'offline';
     const prev = monitorState.get(d.ip);
+    const now = Date.now();
+    const isElec = d.kind === 'electricity';
+    const confirmMs = Math.max(0, (Number(d.offline_confirm_seconds) || 0) * 1000);
+
     if (!prev) {
-      monitorState.set(d.ip, { status, name: d.name, since: new Date() });
+      monitorState.set(d.ip, { status, name: d.name, since: new Date(now), pendingOfflineSince: null });
       continue;
     }
+
+    // Debounce offline for devices that ask for a confirmation window (electricity: 120s)
+    if (confirmMs > 0 && prev.status === 'online' && status === 'offline') {
+      const pendingSince = prev.pendingOfflineSince || now;
+      if (now - pendingSince < confirmMs) {
+        monitorState.set(d.ip, { ...prev, pendingOfflineSince: pendingSince });
+        continue; // not yet confirmed offline
+      }
+      // confirmed offline after the window
+    } else if (status === 'online' && prev.pendingOfflineSince) {
+      // recovered before window expired — cancel pending
+      monitorState.set(d.ip, { ...prev, pendingOfflineSince: null });
+      if (prev.status === 'online') continue;
+    }
+
     if (prev.status !== status) {
-      const mins = Math.round((Date.now() - prev.since.getTime()) / 60000);
+      const mins = Math.round((now - prev.since.getTime()) / 60000);
       const emoji = alive ? '✅' : '🔴';
-      const label = alive ? 'BACK ONLINE' : 'OFFLINE';
+      let label = alive ? 'BACK ONLINE' : 'OFFLINE';
+      let header;
+      if (isElec) {
+        label = alive ? 'ELECTRICITY RESTORED' : 'NO ELECTRICITY';
+        const areaLabel = d.location || d.name;
+        header = alive
+          ? `${emoji} <b>Area ${areaLabel}</b>: <b>${label}</b>`
+          : `${emoji} <b>Area ${areaLabel}</b>: <b>${label}</b>`;
+      } else {
+        header = `${emoji} <b>${d.name}</b> is <b>${label}</b>`;
+      }
       const msg =
-        `${emoji} <b>${d.name}</b> is <b>${label}</b>\n` +
+        `${header}\n` +
         `📍 IP: <code>${d.ip}</code>\n` +
         (d.type ? `📶 Type: ${d.type}\n` : '') +
         (d.location ? `📌 Location: ${d.location}\n` : '') +
         `⏱ Was ${prev.status} for ~${mins} min\n` +
         `🕐 ${new Date().toLocaleString()}`;
-      log(`monitor: ${d.name} (${d.ip}) ${prev.status} -> ${status}`);
-      monitorState.set(d.ip, { status, name: d.name, since: new Date() });
+      log(`monitor: ${d.name} (${d.ip}) ${prev.status} -> ${status}${isElec ? ' [electricity]' : ''}`);
+      monitorState.set(d.ip, { status, name: d.name, since: new Date(now), pendingOfflineSince: null });
       try { await sendTelegram(msg); } catch (e) { log(`telegram send failed: ${e.message}`); }
+    } else {
+      // no state change; make sure pending is cleared on stable online
+      if (status === 'online' && prev.pendingOfflineSince) {
+        monitorState.set(d.ip, { ...prev, pendingOfflineSince: null });
+      }
     }
   }
 }
