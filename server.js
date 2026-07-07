@@ -146,6 +146,7 @@ const CONFIG = {
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
   MONITOR_INTERVAL_MS: parseInt(process.env.MONITOR_INTERVAL_MS || '60000', 10),
   MONITOR_RETRY_COUNT: parseInt(process.env.MONITOR_RETRY_COUNT || '4', 10),
+  MONITOR_CONCURRENCY: parseInt(process.env.MONITOR_CONCURRENCY || '10', 10),
   // Shared secret used to authenticate to the `monitor-devices` edge function,
   // which returns the device list (it talks to the DB with service role on our
   // behalf, so we don't need to expose the service role key on this server).
@@ -755,10 +756,30 @@ async function confirmedPing(host) {
   return false;
 }
 
+// Run async work with a concurrency limit to avoid spawning too many
+// child ping processes at once.
+async function asyncPool(concurrency, items, fn) {
+  const results = [];
+  const executing = new Set();
+  for (const item of items) {
+    const p = Promise.resolve().then(() => fn(item));
+    results.push(p);
+    executing.add(p);
+    const clean = () => executing.delete(p);
+    p.then(clean).catch(clean);
+    if (executing.size >= concurrency) {
+      await Promise.race(executing);
+    }
+  }
+  return Promise.all(results);
+}
+
+
 async function monitorTick() {
+  const tickStart = Date.now();
   const devices = await fetchMonitoredDevices();
   if (!devices.length) return;
-  for (const d of devices) {
+  await asyncPool(Math.max(1, CONFIG.MONITOR_CONCURRENCY), devices, async (d) => {
     const alive = await confirmedPing(d.ip);
     const status = alive ? 'online' : 'offline';
     const prev = monitorState.get(d.ip);
@@ -768,7 +789,7 @@ async function monitorTick() {
 
     if (!prev) {
       monitorState.set(d.ip, { status, name: d.name, since: new Date(now), pendingOfflineSince: null });
-      continue;
+      return;
     }
 
     // Debounce offline for devices that ask for a confirmation window (electricity: 120s)
@@ -776,13 +797,13 @@ async function monitorTick() {
       const pendingSince = prev.pendingOfflineSince || now;
       if (now - pendingSince < confirmMs) {
         monitorState.set(d.ip, { ...prev, pendingOfflineSince: pendingSince });
-        continue; // not yet confirmed offline
+        return; // not yet confirmed offline
       }
       // confirmed offline after the window
     } else if (status === 'online' && prev.pendingOfflineSince) {
       // recovered before window expired — cancel pending
       monitorState.set(d.ip, { ...prev, pendingOfflineSince: null });
-      if (prev.status === 'online') continue;
+      if (prev.status === 'online') return;
     }
 
     if (prev.status !== status) {
@@ -793,9 +814,7 @@ async function monitorTick() {
       if (isElec) {
         label = alive ? 'ELECTRICITY RESTORED' : 'NO ELECTRICITY';
         const areaLabel = d.location || d.name;
-        header = alive
-          ? `${emoji} <b>Area ${areaLabel}</b>: <b>${label}</b>`
-          : `${emoji} <b>Area ${areaLabel}</b>: <b>${label}</b>`;
+        header = `${emoji} <b>Area ${areaLabel}</b>: <b>${label}</b>`;
       } else {
         header = `${emoji} <b>${d.name}</b> is <b>${label}</b>`;
       }
@@ -815,7 +834,8 @@ async function monitorTick() {
         monitorState.set(d.ip, { ...prev, pendingOfflineSince: null });
       }
     }
-  }
+  });
+  log(`monitor tick: ${devices.length} devices checked in ${Date.now() - tickStart}ms`);
 }
 
 function startTelegramMonitor() {
@@ -827,7 +847,7 @@ function startTelegramMonitor() {
     log('Telegram monitor: DISABLED (TELEGRAM_BOT_TOKEN/CHAT_ID not set)');
     return;
   }
-  log(`Telegram monitor: ENABLED, interval=${CONFIG.MONITOR_INTERVAL_MS}ms, retry=${CONFIG.MONITOR_RETRY_COUNT}`);
+  log(`Telegram monitor: ENABLED, interval=${CONFIG.MONITOR_INTERVAL_MS}ms, retry=${CONFIG.MONITOR_RETRY_COUNT}, concurrency=${CONFIG.MONITOR_CONCURRENCY}`);
   // initial seed + loop
   monitorTick().catch((e) => log(`monitor tick error: ${e.message}`));
   setInterval(() => {
