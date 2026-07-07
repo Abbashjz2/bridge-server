@@ -1,0 +1,8 @@
+tunnel: af5d41fd-8f1a-4c46-9524-d7af6f53c616
+credentials-file: C:\Users\abbashejazi\.cloudflared\af5d41fd-8f1a-4c46-9524-d7af6f53c616.json
+
+ingress:
+  - hostname: api.matrix-network.xyz
+    service: http://localhost:3066
+
+  - service: http_status:404
