@@ -32,7 +32,7 @@
  *   export TERMINAL_PORT="8080"        # optional, this server's HTTP/WS port
  *   node device-bridge-server.js
  */
-
+require('dotenv').config();
 const http = require('http');
 const os = require('os');
 const { WebSocketServer } = require('ws');
@@ -40,6 +40,7 @@ const { Client: SshClient } = require('ssh2');
 const { execFile } = require('child_process');
 const fetch = require('node-fetch');
 const { RouterOSAPI } = require('node-routeros');
+const { configDotenv } = require('dotenv');
 
 // ============================================================
 // Lightweight ICMP ping (single packet, tiny payload, 1s timeout).
@@ -143,6 +144,8 @@ const CONFIG = {
   SSH_DEBUG: process.env.SSH_DEBUG === '1',
   // ----- Background Telegram offline/online alerts (no DB writes, no history) -----
   TENANT_ID: process.env.TENANT_ID || '97be6038-81c8-4cf9-bd1c-ca4684fe085e',
+  INSTALLATION_ID: process.env.INSTALLATION_ID || '',
+  LICENSE_KEY: process.env.LICENSE_KEY || '',
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
   MONITOR_INTERVAL_MS: parseInt(process.env.MONITOR_INTERVAL_MS || '60000', 10),
@@ -674,6 +677,8 @@ wss.on('connection', (ws, req) => {
 });
 
 server.listen(CONFIG.TERMINAL_PORT, async () => {
+  log(`Installation ID: ${CONFIG.INSTALLATION_ID || 'NOT SET'}`);
+  log(`License key: ${CONFIG.LICENSE_KEY ? 'SET' : 'NOT SET'}`);  
   log('========================================');
   log(`Device Bridge Server listening on :${CONFIG.TERMINAL_PORT}`);
   log(`  HTTP : GET  /api/device/{overview|interfaces|logs|traffic}?host=...   (RouterOS API :${CONFIG.MIKROTIK_API_PORT})`);
