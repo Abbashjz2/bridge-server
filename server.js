@@ -181,7 +181,22 @@ const CONFIG = {
   // behalf, so we don't need to expose the service role key on this server).
   MONITOR_SHARED_SECRET: process.env.MONITOR_SHARED_SECRET || '123456@@',
 };
+async function validateLicense() {
+  if (!CONFIG.INSTALLATION_ID) {
+    throw new Error('INSTALLATION_ID is missing');
+  }
 
+  if (!CONFIG.LICENSE_KEY) {
+    throw new Error('LICENSE_KEY is missing');
+  }
+
+  if (!CONFIG.HARDWARE_FINGERPRINT) {
+    throw new Error('HARDWARE_FINGERPRINT is missing');
+  }
+
+  log('License configuration is complete');
+  return true;
+}
 const sshDebug = CONFIG.SSH_DEBUG ? (s) => log(`[ssh2] ${s}`) : undefined;
 
 const CORS = {
@@ -712,7 +727,12 @@ server.listen(CONFIG.TERMINAL_PORT, async () => {
   log(`  Password set: ${CONFIG.MIKROTIK_PASSWORD ? 'yes' : 'NO'}`);
   log('  NOTE: enable RouterOS API on each device:  /ip service enable api');
   log('========================================');
-
+try {
+  await validateLicense();
+} catch (e) {
+  log(`License validation failed: ${e.message}`);
+  process.exit(1);
+}
   startTelegramMonitor();
 
   setTimeout(async () => {
