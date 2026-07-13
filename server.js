@@ -171,6 +171,7 @@ const CONFIG = {
   INSTALLATION_ID: process.env.INSTALLATION_ID || '',
   LICENSE_KEY: process.env.LICENSE_KEY || '',
   HARDWARE_FINGERPRINT: getHardwareFingerprint(),
+  BRIDGE_VALIDATION_SECRET: process.env.BRIDGE_VALIDATION_SECRET || '',
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
   MONITOR_INTERVAL_MS: parseInt(process.env.MONITOR_INTERVAL_MS || '60000', 10),
@@ -193,6 +194,9 @@ async function validateLicense() {
   if (!CONFIG.HARDWARE_FINGERPRINT) {
     throw new Error('HARDWARE_FINGERPRINT is missing');
   }
+  if (!CONFIG.BRIDGE_VALIDATION_SECRET) {
+  throw new Error('BRIDGE_VALIDATION_SECRET is missing');
+}
 
   log('License configuration is complete');
   return true;
