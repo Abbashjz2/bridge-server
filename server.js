@@ -750,26 +750,29 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-server.listen(CONFIG.TERMINAL_PORT, async () => {
-  log(`Hardware fingerprint: ${CONFIG.HARDWARE_FINGERPRINT}`);
-  log(`Installation ID: ${CONFIG.INSTALLATION_ID || 'NOT SET'}`);
-  log(`License key: ${CONFIG.LICENSE_KEY ? 'SET' : 'NOT SET'}`);  
-  log('========================================');
-  log(`Device Bridge Server listening on :${CONFIG.TERMINAL_PORT}`);
-  log(`  HTTP : GET  /api/device/{overview|interfaces|logs|traffic}?host=...   (RouterOS API :${CONFIG.MIKROTIK_API_PORT})`);
-  log(`  WS   :      /  (interactive SSH terminal :${CONFIG.MIKROTIK_PORT})`);
-  log(`  Password set: ${CONFIG.MIKROTIK_PASSWORD ? 'yes' : 'NO'}`);
-  log('  NOTE: enable RouterOS API on each device:  /ip service enable api');
-  log('========================================');
-try {
-  await validateLicense();
-} catch (e) {
-  log(`License validation failed: ${e.message}`);
-  process.exit(1);
-}
-  startTelegramMonitor();
+async function startServer() {
+  // Validate before opening the HTTP/WebSocket port.
+  try {
+    log('Validating bridge license...');
+    await validateLicense();
+  } catch (e) {
+    log(`License validation failed: ${e.message}`);
+    process.exit(1);
+    return;
+  }
 
-  setTimeout(async () => {
+  // The license is valid, so the server may now start.
+  server.listen(CONFIG.TERMINAL_PORT, async () => {
+    log('========================================');
+    log(`Device Bridge Server listening on :${CONFIG.TERMINAL_PORT}`);
+    log(`  HTTP : GET  /api/device/{overview|interfaces|logs|traffic}?host=...   (RouterOS API :${CONFIG.MIKROTIK_API_PORT})`);
+    log(`  WS   :      /  (interactive SSH terminal :${CONFIG.MIKROTIK_PORT})`);
+    log(`  Password set: ${CONFIG.MIKROTIK_PASSWORD ? 'yes' : 'NO'}`);
+    log('  NOTE: enable RouterOS API on each device:  /ip service enable api');
+    log('========================================');
+
+    startTelegramMonitor();
+
     const startupMessage =
       `🟢 <b>Bridge Server Online</b>\n\n` +
       `🖥 Hostname: <code>${os.hostname()}</code>\n` +
@@ -783,8 +786,10 @@ try {
     } catch (e) {
       log(`Startup Telegram notification failed: ${e.message}`);
     }
-  }, 5000);
-});
+  });
+}
+
+startServer();
 
 // ============================================================================
 // Background Telegram offline/online alerts
