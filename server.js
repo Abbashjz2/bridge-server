@@ -684,19 +684,21 @@ server.listen(CONFIG.TERMINAL_PORT, async () => {
 
   startTelegramMonitor();
 
-  const startupMessage =
-    `🟢 <b>Bridge Server Online</b>\n\n` +
-    `🖥 Hostname: <code>${os.hostname()}</code>\n` +
-    `🌐 Port: <code>${CONFIG.TERMINAL_PORT}</code>\n` +
-    `📡 Monitoring: Active\n` +
-    `🕐 ${new Date().toLocaleString()}`;
+  setTimeout(async () => {
+    const startupMessage =
+      `🟢 <b>Bridge Server Online</b>\n\n` +
+      `🖥 Hostname: <code>${os.hostname()}</code>\n` +
+      `🌐 Port: <code>${CONFIG.TERMINAL_PORT}</code>\n` +
+      `📡 Monitoring: Active\n` +
+      `🕐 ${new Date().toLocaleString()}`;
 
-  try {
-    await sendTelegram(startupMessage);
-    log('Startup Telegram notification sent');
-  } catch (e) {
-    log(`Startup Telegram notification failed: ${e.message}`);
-  }
+    try {
+      await sendTelegram(startupMessage);
+      log('Startup Telegram notification sent');
+    } catch (e) {
+      log(`Startup Telegram notification failed: ${e.message}`);
+    }
+  }, 5000);
 });
 
 // ============================================================================
