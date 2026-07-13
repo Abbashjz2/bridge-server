@@ -35,6 +35,8 @@
 require('dotenv').config();
 const http = require('http');
 const os = require('os');
+const fs = require('fs');
+const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { Client: SshClient } = require('ssh2');
 const { execFile } = require('child_process');
@@ -129,7 +131,29 @@ function patchRouterOsEmptyReply() {
 }
 
 patchRouterOsEmptyReply();
+function getHardwareFingerprint() {
+  let machineId = '';
+  let cpuSerial = '';
 
+  try {
+    machineId = fs.readFileSync('/etc/machine-id', 'utf8').trim();
+  } catch {
+    machineId = 'no-machine-id';
+  }
+
+  try {
+    const cpuInfo = fs.readFileSync('/proc/cpuinfo', 'utf8');
+    const match = cpuInfo.match(/^Serial\s*:\s*(.+)$/m);
+    cpuSerial = match ? match[1].trim() : 'no-cpu-serial';
+  } catch {
+    cpuSerial = 'no-cpu-serial';
+  }
+
+  return crypto
+    .createHash('sha256')
+    .update(`${machineId}|${cpuSerial}`)
+    .digest('hex');
+}
 const CONFIG = {
   SUPABASE_URL: process.env.SUPABASE_URL || 'https://vcabaubdlvjzeczfyfgc.supabase.co',
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
@@ -146,6 +170,7 @@ const CONFIG = {
   TENANT_ID: process.env.TENANT_ID || '97be6038-81c8-4cf9-bd1c-ca4684fe085e',
   INSTALLATION_ID: process.env.INSTALLATION_ID || '',
   LICENSE_KEY: process.env.LICENSE_KEY || '',
+  HARDWARE_FINGERPRINT: getHardwareFingerprint(),
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
   MONITOR_INTERVAL_MS: parseInt(process.env.MONITOR_INTERVAL_MS || '60000', 10),
@@ -677,6 +702,7 @@ wss.on('connection', (ws, req) => {
 });
 
 server.listen(CONFIG.TERMINAL_PORT, async () => {
+  log(`Hardware fingerprint: ${CONFIG.HARDWARE_FINGERPRINT}`);
   log(`Installation ID: ${CONFIG.INSTALLATION_ID || 'NOT SET'}`);
   log(`License key: ${CONFIG.LICENSE_KEY ? 'SET' : 'NOT SET'}`);  
   log('========================================');
