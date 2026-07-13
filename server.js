@@ -183,6 +183,10 @@ const CONFIG = {
   MONITOR_SHARED_SECRET: process.env.MONITOR_SHARED_SECRET || '123456@@',
 };
 async function validateLicense() {
+  if (!CONFIG.TENANT_ID) {
+    throw new Error('TENANT_ID is missing');
+  }
+
   if (!CONFIG.INSTALLATION_ID) {
     throw new Error('INSTALLATION_ID is missing');
   }
@@ -194,11 +198,37 @@ async function validateLicense() {
   if (!CONFIG.HARDWARE_FINGERPRINT) {
     throw new Error('HARDWARE_FINGERPRINT is missing');
   }
-  if (!CONFIG.BRIDGE_VALIDATION_SECRET) {
-  throw new Error('BRIDGE_VALIDATION_SECRET is missing');
-}
 
-  log('License configuration is complete');
+  if (!CONFIG.BRIDGE_VALIDATION_SECRET) {
+    throw new Error('BRIDGE_VALIDATION_SECRET is missing');
+  }
+
+  const response = await fetch(
+    `${CONFIG.SUPABASE_URL}/functions/v1/validate-bridge-license`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-bridge-secret': CONFIG.BRIDGE_VALIDATION_SECRET,
+      },
+      body: JSON.stringify({
+        tenant_id: CONFIG.TENANT_ID,
+        license_key: CONFIG.LICENSE_KEY,
+        installation_id: CONFIG.INSTALLATION_ID,
+        hardware_fingerprint: CONFIG.HARDWARE_FINGERPRINT,
+      }),
+    }
+  );
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok || result.valid !== true) {
+    throw new Error(
+      result.reason || `license server returned HTTP ${response.status}`
+    );
+  }
+
+  log('License validation successful');
   return true;
 }
 const sshDebug = CONFIG.SSH_DEBUG ? (s) => log(`[ssh2] ${s}`) : undefined;
