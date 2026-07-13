@@ -34,6 +34,7 @@
  */
 
 const http = require('http');
+const os = require('os');
 const { WebSocketServer } = require('ws');
 const { Client: SshClient } = require('ssh2');
 const { execFile } = require('child_process');
@@ -672,7 +673,7 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-server.listen(CONFIG.TERMINAL_PORT, () => {
+server.listen(CONFIG.TERMINAL_PORT, async () => {
   log('========================================');
   log(`Device Bridge Server listening on :${CONFIG.TERMINAL_PORT}`);
   log(`  HTTP : GET  /api/device/{overview|interfaces|logs|traffic}?host=...   (RouterOS API :${CONFIG.MIKROTIK_API_PORT})`);
@@ -680,7 +681,22 @@ server.listen(CONFIG.TERMINAL_PORT, () => {
   log(`  Password set: ${CONFIG.MIKROTIK_PASSWORD ? 'yes' : 'NO'}`);
   log('  NOTE: enable RouterOS API on each device:  /ip service enable api');
   log('========================================');
+
   startTelegramMonitor();
+
+  const startupMessage =
+    `🟢 <b>Bridge Server Online</b>\n\n` +
+    `🖥 Hostname: <code>${os.hostname()}</code>\n` +
+    `🌐 Port: <code>${CONFIG.TERMINAL_PORT}</code>\n` +
+    `📡 Monitoring: Active\n` +
+    `🕐 ${new Date().toLocaleString()}`;
+
+  try {
+    await sendTelegram(startupMessage);
+    log('Startup Telegram notification sent');
+  } catch (e) {
+    log(`Startup Telegram notification failed: ${e.message}`);
+  }
 });
 
 // ============================================================================
@@ -745,7 +761,59 @@ async function sendTelegram(text) {
     req.end();
   });
 }
+let isShuttingDown = false;
 
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  log(`Shutdown requested: ${signal}`);
+
+  const shutdownMessage =
+    `🔴 <b>Bridge Server Offline</b>\n\n` +
+    `🖥 Hostname: <code>${os.hostname()}</code>\n` +
+    `⚠️ Reason: <code>${signal}</code>\n` +
+    `🕐 ${new Date().toLocaleString()}`;
+
+  // Prevent shutdown from hanging forever if Telegram is unreachable.
+  const forceExitTimer = setTimeout(() => {
+    log('Graceful shutdown timeout; forcing exit');
+    process.exit(1);
+  }, 5000);
+
+  forceExitTimer.unref?.();
+
+  try {
+    await sendTelegram(shutdownMessage);
+    log('Shutdown Telegram notification sent');
+  } catch (e) {
+    log(`Shutdown Telegram notification failed: ${e.message}`);
+  }
+
+  // Close RouterOS pooled connections.
+  for (const key of [...apiPool.keys()]) {
+    dropConn(key);
+  }
+
+  // Close WebSocket clients.
+  for (const client of wss.clients) {
+    try {
+      client.close(1001, 'Server shutting down');
+    } catch {
+      // Ignore close errors.
+    }
+  }
+
+  // Stop accepting HTTP and WebSocket connections.
+  server.close(() => {
+    clearTimeout(forceExitTimer);
+    log('Bridge server stopped cleanly');
+    process.exit(0);
+  });
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 async function confirmedPing(host) {
   let r = await pingOnce(host, 16, 1000);
   if (r.up) return true;

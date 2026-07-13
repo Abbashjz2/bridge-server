@@ -9,6 +9,7 @@
     "dev": "nodemon -L server.js"
   },
   "dependencies": {
+    "dotenv": "^17.4.2",
     "node-fetch": "^2.7.0",
     "node-routeros": "^1.6.8",
     "ssh2": "^1.16.0",
