@@ -470,7 +470,9 @@ async function getWirelessRegistrations(ctx) {
 }
 
 async function getTraffic(ctx, iface) {
-  if (!iface || !/^[\w\-\.]+$/.test(iface)) throw new Error('bad iface');
+  if (!iface || typeof iface !== 'string' || iface.length > 128) {
+  throw new Error('bad iface');
+}
   const rows = await apiCmd(ctx, [
     '/interface/monitor-traffic',
     `=interface=${iface}`,
