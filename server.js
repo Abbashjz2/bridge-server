@@ -45,6 +45,7 @@ const fetch = require('node-fetch');
 const { RouterOSAPI } = require('node-routeros');
 const { configDotenv } = require('dotenv');
 const { createDeviceResolver } = require('./lib/deviceResolver');
+const { createRouterOsService } = require('./lib/routeros');
 
 // ============================================================
 // Lightweight ICMP ping (single packet, tiny payload, 1s timeout).
@@ -246,6 +247,14 @@ const CORS = {
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 const {
+  apiPool: apiPoolFromModule,
+  poolKey: poolKeyFromModule,
+  dropConn: dropConnFromModule,
+} = createRouterOsService({
+  config: CONFIG,
+  log,
+});
+const {
   resolveDevice: resolveDeviceFromModule,
   clearDeviceCache,
 } = createDeviceResolver({
@@ -253,6 +262,7 @@ const {
   bridgeValidationSecret: CONFIG.BRIDGE_VALIDATION_SECRET,
   log,
 });
+
 // node-routeros can synchronously throw on certain unexpected replies
 // (e.g. "!empty"). Don't let that kill the whole bridge process.
 process.on('uncaughtException', (e) => log(`uncaughtException: ${e && e.message}`));
