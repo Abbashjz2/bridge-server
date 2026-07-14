@@ -32,6 +32,7 @@
  *   export TERMINAL_PORT="8080"        # optional, this server's HTTP/WS port
  *   node device-bridge-server.js
  */
+
 require('dotenv').config();
 const http = require('http');
 const os = require('os');
@@ -43,6 +44,7 @@ const { execFile } = require('child_process');
 const fetch = require('node-fetch');
 const { RouterOSAPI } = require('node-routeros');
 const { configDotenv } = require('dotenv');
+const { createDeviceResolver } = require('./lib/deviceResolver');
 
 // ============================================================
 // Lightweight ICMP ping (single packet, tiny payload, 1s timeout).
@@ -307,7 +309,14 @@ const CORS = {
 };
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
-
+const {
+  resolveDevice: resolveDeviceFromModule,
+  clearDeviceCache,
+} = createDeviceResolver({
+  supabaseUrl: CONFIG.SUPABASE_URL,
+  bridgeValidationSecret: CONFIG.BRIDGE_VALIDATION_SECRET,
+  log,
+});
 // node-routeros can synchronously throw on certain unexpected replies
 // (e.g. "!empty"). Don't let that kill the whole bridge process.
 process.on('uncaughtException', (e) => log(`uncaughtException: ${e && e.message}`));
