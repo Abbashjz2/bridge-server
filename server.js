@@ -231,6 +231,32 @@ async function validateLicense() {
   log('License validation successful');
   return true;
 }
+async function getBridgeDevice(tenantId, deviceId) {
+  const response = await fetch(
+    `${CONFIG.SUPABASE_URL}/functions/v1/get-bridge-device`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-bridge-secret': CONFIG.BRIDGE_VALIDATION_SECRET,
+      },
+      body: JSON.stringify({
+        tenant_id: tenantId,
+        device_id: deviceId,
+      }),
+    }
+  );
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok || result.ok !== true || !result.device) {
+    throw new Error(
+      result.reason || `get-bridge-device returned HTTP ${response.status}`
+    );
+  }
+
+  return result.device;
+}
 const sshDebug = CONFIG.SSH_DEBUG ? (s) => log(`[ssh2] ${s}`) : undefined;
 
 const CORS = {
