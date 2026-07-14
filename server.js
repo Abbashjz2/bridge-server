@@ -630,8 +630,49 @@ const server = http.createServer(async (req, res) => {
 
       const op = url.pathname.replace('/api/device/', '');
       let payload;
+      if (op === 'overview' && req.method === 'POST') {
+  const body = await readJsonBody(req);
 
-      if (op === 'action' && req.method === 'POST') {
+  const tenantId = body.tenant_id;
+  const deviceId = body.device_id;
+
+  if (!tenantId || !deviceId) {
+    res.writeHead(400, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    return res.end(
+      JSON.stringify({
+        error: 'tenant_id and device_id are required',
+      })
+    );
+  }
+
+  if (tenantId !== CONFIG.TENANT_ID) {
+    res.writeHead(403, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    return res.end(
+      JSON.stringify({
+        error: 'tenant_not_allowed',
+      })
+    );
+  }
+
+  const device = await getBridgeDevice(tenantId, deviceId);
+
+  const ctx = {
+    host: device.ip,
+    user: device.username,
+    pass: device.password,
+  };
+
+  payload = await getOverview(ctx);
+}
+      else if (op === 'action' && req.method === 'POST') {
         const body = await readJsonBody(req);
         const host = body.host;
         if (!isValidHost(host)) { res.writeHead(400, CORS); return res.end('{"error":"bad host"}'); }
