@@ -735,6 +735,49 @@ payload = await routeros.getOverview(ctx);
 
   payload = await routeros.getLogs(ctx, limit);
 }
+else if (
+  op === 'wireless-registrations' &&
+  req.method === 'POST'
+) {
+  const body = await readJsonBody(req);
+
+  const tenantId = body.tenant_id;
+  const deviceId = body.device_id;
+
+  if (!tenantId || !deviceId) {
+    res.writeHead(400, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    return res.end(
+      JSON.stringify({
+        error: 'tenant_id and device_id are required',
+      })
+    );
+  }
+
+  if (tenantId !== CONFIG.TENANT_ID) {
+    res.writeHead(403, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    return res.end(
+      JSON.stringify({
+        error: 'tenant_not_allowed',
+      })
+    );
+  }
+
+  const ctx = await resolveDeviceFromModule(
+    tenantId,
+    deviceId
+  );
+
+  payload =
+    await routeros.getWirelessRegistrations(ctx);
+}
 else if (op === 'traffic' && req.method === 'POST') {
   const body = await readJsonBody(req);
 
