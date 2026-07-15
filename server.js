@@ -45,7 +45,10 @@ const fetch = require('node-fetch');
 const { RouterOSAPI } = require('node-routeros');
 const { configDotenv } = require('dotenv');
 const { createDeviceResolver } = require('./lib/deviceResolver');
-const { createRouterOsService } = require('./lib/routeros');
+const {
+    createRouterOsService,
+    SSH_ALGOS,
+} = require('./lib/routeros');
 
 // ============================================================
 // Lightweight ICMP ping (single packet, tiny payload, 1s timeout).
@@ -133,7 +136,7 @@ function patchRouterOsEmptyReply() {
   }
 }
 
-patchRouterOsEmptyReply();
+
 function getHardwareFingerprint() {
   let machineId = '';
   let cpuSerial = '';
@@ -293,256 +296,39 @@ function isValidHost(h) {
 // defaults — useful for legacy deployments.
 // ============================================================
 
-const apiPool = new Map(); // key "host|user" -> { client, lastUsed, connecting, host }
 
-function poolKey(host, user) { return `${host}|${user}`; }
 
-function dropConn(key) {
-  const entry = apiPool.get(key);
-  if (!entry) return;
-  apiPool.delete(key);
-  try { entry.client && entry.client.close(); } catch { /* noop */ }
-}
-
-async function getApi(host, user, password) {
-  const u = user || CONFIG.MIKROTIK_USER;
-  const p = password || CONFIG.MIKROTIK_PASSWORD;
-  const key = poolKey(host, u);
-
-  let entry = apiPool.get(key);
-  if (entry && entry.client && entry.client.connected) {
-    entry.lastUsed = Date.now();
-    return entry.client;
-  }
-  if (entry && entry.connecting) {
-    await entry.connecting;
-    return apiPool.get(key).client;
-  }
-
-  const client = new RouterOSAPI({
-    host,
-    port: CONFIG.MIKROTIK_API_PORT,
-    user: u,
-    password: p,
-    timeout: Math.ceil(CONFIG.API_TIMEOUT_MS / 1000),
-    keepalive: true,
-  });
-
-  const connecting = client.connect()
-    .then(() => {
-      apiPool.set(key, { client, lastUsed: Date.now(), connecting: null, host });
-      client.on('error', (e) => { log(`API socket error ${key}: ${e.message}`); dropConn(key); });
-      client.on('close', () => { dropConn(key); });
-      return client;
-    })
-    .catch((e) => { apiPool.delete(key); throw e; });
-
-  apiPool.set(key, { client, lastUsed: Date.now(), connecting, host });
-  await connecting;
-  return client;
-}
 
 
 // Idle reaper
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of apiPool.entries()) {
-    if (entry.connecting) continue;
-    if (now - entry.lastUsed > CONFIG.API_IDLE_MS) {
-      log(`API idle close ${key}`);
-      dropConn(key);
-    }
-  }
-}, 60 * 1000).unref?.();
+
 
 /**
  * Run an API command. ctx = { host, user, pass }.
  * words = array like ['/system/resource/print'] or ['/interface/print', '=stats='].
  */
-async function apiCmd(ctx, words) {
-  const client = await getApi(ctx.host, ctx.user, ctx.pass);
-  try {
-    return await new Promise((resolve, reject) => {
-      // node-routeros throws synchronously inside its own packet handler when
-      // RouterOS sends "!empty" (common on v7 wifi registration-table when
-      // there are no clients). Catch it here so it surfaces as a normal
-      // rejection / empty result instead of crashing the process.
-      const onErr = (e) => { cleanup(); reject(e); };
-      const cleanup = () => { client.removeListener && client.removeListener('error', onErr); };
-      client.once && client.once('error', onErr);
-      client.write(words).then((rows) => { cleanup(); resolve(rows); }, onErr);
-    });
-  } catch (e) {
-    const msg = e && (e.message || e.errno || '');
-    if (/UNKNOWNREPLY|!empty/i.test(msg)) return []; // treat as empty result
-    if (/socket|closed|timeout|EPIPE|ECONNRESET/i.test(msg)) {
-      dropConn(poolKey(ctx.host, ctx.user || CONFIG.MIKROTIK_USER));
-    }
-    throw e;
-  }
-}
+
 
 // ============================================================
 // Data fetchers (API-based)
 // ============================================================
 
-async function getOverview(ctx) {
-  const [resourceRows, identityRows, rbRows, healthRows] = await Promise.all([
-    apiCmd(ctx, ['/system/resource/print']).catch(() => []),
-    apiCmd(ctx, ['/system/identity/print']).catch(() => []),
-    apiCmd(ctx, ['/system/routerboard/print']).catch(() => []),
-    apiCmd(ctx, ['/system/health/print']).catch(() => []),
-  ]);
 
-  const resource = resourceRows[0] || {};
-  const identity = identityRows[0] || {};
-  const routerboard = rbRows[0] || {};
 
-  const health = {};
-  if (Array.isArray(healthRows) && healthRows.length) {
-    if (healthRows[0] && 'name' in healthRows[0] && 'value' in healthRows[0]) {
-      for (const row of healthRows) health[row.name] = row.value;
-    } else {
-      Object.assign(health, healthRows[0]);
-    }
-  }
 
-  return { resource, identity, routerboard, health };
-}
 
-async function getInterfaces(ctx) {
-  const rows = await apiCmd(ctx, ['/interface/print']).catch(() => []);
-  return rows.map((r) => ({
-    name: r.name,
-    type: r.type,
-    'mac-address': r['mac-address'],
-    running: String(r.running ?? ''),
-    disabled: String(r.disabled ?? ''),
-    mtu: r.mtu,
-    'rx-byte': r['rx-byte'],
-    'tx-byte': r['tx-byte'],
-    comment: r.comment || '',
-    ...r,
-  }));
-}
 
-async function getLogs(ctx, limit = 100) {
-  const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
-  const rows = await apiCmd(ctx, ['/log/print']).catch(() => []);
-  const lines = rows.map((r) => {
-    const time = r.time || '';
-    const topics = r.topics || '';
-    const msg = r.message || '';
-    return `${time} ${topics} ${msg}`.trim();
-  });
-  return lines.slice(-safeLimit);
-}
 
-async function getWirelessRegistrations(ctx) {
-  // Try wifi (RouterOS 7 WifiWave2) first, then wireless (legacy / wireless package).
-  // Both calls can fail or return "!empty" — never let either kill the request.
-  let rows = await apiCmd(ctx, ['/interface/wifi/registration-table/print']).catch(() => []);
-  if (!Array.isArray(rows) || rows.length === 0) {
-    rows = await apiCmd(ctx, ['/interface/wireless/registration-table/print']).catch(() => []);
-  }
-  return (rows || []).map((r) => ({
-    mac: r['mac-address'] || '',
-    radio_name: r['radio-name'] || r['name'] || '',
-    interface: r.interface || '',
-    ssid: r.ssid || '',
-    uptime: r.uptime || '',
-    signal: r['signal-strength'] || r['rx-signal'] || '',
-    tx_signal: r['tx-signal-strength'] || r['tx-signal'] || '',
-    rx_rate: r['rx-rate'] || '',
-    tx_rate: r['tx-rate'] || '',
-    last_ip: r['last-ip'] || '',
-    comment: r.comment || '',
-    raw: r,
-  }));
-}
 
-async function getTraffic(ctx, iface) {
-  if (!iface || typeof iface !== 'string' || iface.length > 128) {
-  throw new Error('bad iface');
-}
-  const rows = await apiCmd(ctx, [
-    '/interface/monitor-traffic',
-    `=interface=${iface}`,
-    '=once=',
-  ]);
-  const r = rows[0] || {};
-  return {
-    name: iface,
-    rxBps: parseInt(r['rx-bits-per-second'] || '0', 10),
-    txBps: parseInt(r['tx-bits-per-second'] || '0', 10),
-    rxPps: parseInt(r['rx-packets-per-second'] || '0', 10),
-    txPps: parseInt(r['tx-packets-per-second'] || '0', 10),
-    raw: r,
-  };
-}
+
 
 /**
  * Create a RouterOS backup, fetch its bytes over SFTP, then remove the file
  * from the device so we don't fill up flash. Returns { filename, buffer }.
  */
-async function createAndFetchBackup(ctx) {
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
-  const baseName = `bridge-backup-${stamp}`;
-  const fileName = `${baseName}.backup`;
 
-  await apiCmd(ctx, ['/system/backup/save', `=name=${baseName}`, '=dont-encrypt=yes']);
 
-  let fileRow = null;
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 500));
-    // NOTE: don't pass ?name= — node-routeros throws on the !empty reply
-    // RouterOS sends when the filter matches nothing. Fetch all and filter.
-    const rows = await apiCmd(ctx, ['/file/print']).catch(() => []);
-    const match = (rows || []).find((r) => r.name === fileName);
-    if (match) { fileRow = match; break; }
-  }
-  if (!fileRow) throw new Error('backup file not found on device after 15s');
 
-  const buffer = await sftpFetch(ctx, fileName);
-
-  try {
-    await apiCmd(ctx, ['/file/remove', `=numbers=${fileRow['.id']}`]);
-  } catch (e) { log(`backup cleanup failed for ${ctx.host}: ${e.message}`); }
-
-  return { filename: fileName, buffer };
-}
-
-function sftpFetch(ctx, remotePath) {
-  return new Promise((resolve, reject) => {
-    const ssh = new SshClient();
-    let done = false;
-    const finish = (err, data) => {
-      if (done) return; done = true;
-      try { ssh.end(); } catch { /* noop */ }
-      err ? reject(err) : resolve(data);
-    };
-    ssh.on('ready', () => {
-      ssh.sftp((err, sftp) => {
-        if (err) return finish(err);
-        const chunks = [];
-        const rs = sftp.createReadStream(remotePath);
-        rs.on('data', (c) => chunks.push(c));
-        rs.on('end', () => finish(null, Buffer.concat(chunks)));
-        rs.on('error', finish);
-      });
-    });
-    ssh.on('error', finish);
-    ssh.connect({
-      host: ctx.host,
-      port: CONFIG.MIKROTIK_PORT,
-      username: ctx.user || CONFIG.MIKROTIK_USER,
-      password: ctx.pass || CONFIG.MIKROTIK_PASSWORD,
-      readyTimeout: CONFIG.SSH_TIMEOUT_MS,
-      algorithms: SSH_ALGOS,
-    });
-    setTimeout(() => finish(new Error('sftp timeout')), 30000);
-  });
-}
 
 
 /**
@@ -550,50 +336,7 @@ function sftpFetch(ctx, remotePath) {
  * Keys are stable IDs the frontend sends; values are arrays of API words.
  * Edit to taste; keep commands SAFE and IDEMPOTENT.
  */
-const SAVED_SCRIPTS = {
-  'clear-dhcp-leases': async (ctx) => {
-    const leases = await apiCmd(ctx, ['/ip/dhcp-server/lease/print', '?dynamic=true']);
-    const ids = leases.map((l) => l['.id']).filter(Boolean);
-    if (!ids.length) return 'no dynamic leases';
-    await apiCmd(ctx, ['/ip/dhcp-server/lease/remove', `=numbers=${ids.join(',')}`]);
-    return `removed ${ids.length} leases`;
-  },
-  'flush-dns-cache': (ctx) => apiCmd(ctx, ['/ip/dns/cache/flush']).then(() => 'ok'),
-  'log-info':        (ctx) => apiCmd(ctx, ['/log/info', '=message=manual action from device-bridge']).then(() => 'ok'),
-  'backup-now':      (ctx) => apiCmd(ctx, ['/system/backup/save', '=name=auto-bridge']).then(() => 'ok'),
-};
 
-async function runAction(ctx, body) {
-  const action = String(body.action || '');
-  if (action === 'reboot') {
-    await apiCmd(ctx, ['/system/reboot']);
-    return { ok: true, action };
-  }
-  if (action === 'toggle-interface') {
-    const iface = String(body.iface || '');
-    const disable = !!body.disable;
-    if (!/^[\w\-\.]+$/.test(iface)) throw new Error('bad iface');
-    const rows = await apiCmd(ctx, ['/interface/print', `?name=${iface}`]);
-    const id = rows[0] && rows[0]['.id'];
-    if (!id) throw new Error('interface not found');
-    await apiCmd(ctx, [
-      disable ? '/interface/disable' : '/interface/enable',
-      `=numbers=${id}`,
-    ]);
-    return { ok: true, action, iface, disabled: disable };
-  }
-  if (action === 'run-script') {
-    const name = String(body.script || '');
-    const fn = SAVED_SCRIPTS[name];
-    if (!fn) throw new Error('unknown script');
-    const output = await fn(ctx);
-    return { ok: true, action, script: name, output };
-  }
-  if (action === 'list-scripts') {
-    return { scripts: Object.keys(SAVED_SCRIPTS) };
-  }
-  throw new Error('unknown action');
-}
 
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
@@ -947,11 +690,11 @@ else if (op === 'traffic' && req.method === 'POST') {
             user: url.searchParams.get('user') || undefined,
             pass: url.searchParams.get('pass') || undefined,
           };
-          if (op === 'overview') payload = await getOverview(ctx);
-          else if (op === 'interfaces') payload = await getInterfaces(ctx);
-          else if (op === 'logs') payload = await getLogs(ctx, url.searchParams.get('limit'));
-          else if (op === 'traffic') payload = await getTraffic(ctx, url.searchParams.get('iface'));
-          else if (op === 'wireless-registrations') payload = await getWirelessRegistrations(ctx);
+          if (op === 'overview') payload = await routeros.getOverview(ctx);
+          else if (op === 'interfaces') payload = await routeros.getInterfaces(ctx);
+          else if (op === 'logs') payload = await routeros.getLogs(ctx, url.searchParams.get('limit'));
+          else if (op === 'traffic') payload = await routeros.getTraffic(ctx, url.searchParams.get('iface'));
+          else if (op === 'wireless-registrations') payload = await routeros.getWirelessRegistrations(ctx);
           else { res.writeHead(404, CORS); return res.end('{"error":"unknown op"}'); }
         }
       }
@@ -974,27 +717,7 @@ else if (op === 'traffic' && req.method === 'POST') {
 // Wide algorithm list so we can talk to both modern RouterOS 7.x AND legacy
 // RouterOS 6.4x boxes.
 // ============================================================
-const SSH_ALGOS = {
-  kex: [
-    'curve25519-sha256', 'curve25519-sha256@libssh.org',
-    'ecdh-sha2-nistp256', 'ecdh-sha2-nistp384', 'ecdh-sha2-nistp521',
-    'diffie-hellman-group18-sha512', 'diffie-hellman-group17-sha512',
-    'diffie-hellman-group16-sha512', 'diffie-hellman-group15-sha512',
-    'diffie-hellman-group14-sha256', 'diffie-hellman-group14-sha1',
-    'diffie-hellman-group-exchange-sha256', 'diffie-hellman-group-exchange-sha1',
-    'diffie-hellman-group1-sha1',
-  ],
-  serverHostKey: [
-    'ssh-ed25519', 'ecdsa-sha2-nistp256', 'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521',
-    'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa', 'ssh-dss',
-  ],
-  cipher: [
-    'aes128-ctr', 'aes192-ctr', 'aes256-ctr',
-    'aes128-gcm', 'aes256-gcm', 'aes128-gcm@openssh.com', 'aes256-gcm@openssh.com',
-    'aes128-cbc', 'aes192-cbc', 'aes256-cbc', '3des-cbc',
-  ],
-  hmac: ['hmac-sha2-256', 'hmac-sha2-512', 'hmac-sha1', 'hmac-sha1-96', 'hmac-md5'],
-};
+
 
 const wss = new WebSocketServer({ server });
 wss.on('connection', (ws, req) => {
@@ -1307,9 +1030,7 @@ async function gracefulShutdown(signal) {
   }
 
   // Close RouterOS pooled connections.
-  for (const key of [...apiPool.keys()]) {
-    dropConn(key);
-  }
+  routeros.closeAll();
 
   // Close WebSocket clients.
   for (const client of wss.clients) {
