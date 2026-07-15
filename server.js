@@ -246,11 +246,7 @@ const CORS = {
 };
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
-const {
-  apiPool: apiPoolFromModule,
-  poolKey: poolKeyFromModule,
-  dropConn: dropConnFromModule,
-} = createRouterOsService({
+const routeros = createRouterOsService({
   config: CONFIG,
   log,
 });
@@ -662,10 +658,7 @@ const server = http.createServer(async (req, res) => {
 
   const ctx = await resolveDeviceFromModule(tenantId, deviceId);
 
-  const routeros = createRouterOsService({
-    config: CONFIG,
-    log,
-});
+
 
 payload = await routeros.getOverview(ctx);
 }
