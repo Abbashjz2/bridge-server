@@ -735,6 +735,56 @@ payload = await routeros.getOverview(ctx);
 
   payload = await routeros.getLogs(ctx, limit);
 }
+else if (op === 'traffic' && req.method === 'POST') {
+  const body = await readJsonBody(req);
+
+  const tenantId = body.tenant_id;
+  const deviceId = body.device_id;
+  const iface = body.iface;
+
+  if (!tenantId || !deviceId) {
+    res.writeHead(400, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    return res.end(
+      JSON.stringify({
+        error: 'tenant_id and device_id are required',
+      })
+    );
+  }
+
+  if (!iface || typeof iface !== 'string') {
+    res.writeHead(400, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    return res.end(
+      JSON.stringify({
+        error: 'iface is required',
+      })
+    );
+  }
+
+  if (tenantId !== CONFIG.TENANT_ID) {
+    res.writeHead(403, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    return res.end(
+      JSON.stringify({
+        error: 'tenant_not_allowed',
+      })
+    );
+  }
+
+  const ctx = await resolveDeviceFromModule(tenantId, deviceId);
+
+  payload = await routeros.getTraffic(ctx, iface);
+}
 
       else if (op === 'action' && req.method === 'POST') {
         const body = await readJsonBody(req);
