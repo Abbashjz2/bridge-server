@@ -669,6 +669,42 @@ const server = http.createServer(async (req, res) => {
 
 payload = await routeros.getOverview(ctx);
 }
+else if (op === 'interfaces' && req.method === 'POST') {
+  const body = await readJsonBody(req);
+
+  const tenantId = body.tenant_id;
+  const deviceId = body.device_id;
+
+  if (!tenantId || !deviceId) {
+    res.writeHead(400, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    return res.end(
+      JSON.stringify({
+        error: 'tenant_id and device_id are required',
+      })
+    );
+  }
+
+  if (tenantId !== CONFIG.TENANT_ID) {
+    res.writeHead(403, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    return res.end(
+      JSON.stringify({
+        error: 'tenant_not_allowed',
+      })
+    );
+  }
+
+  const ctx = await resolveDeviceFromModule(tenantId, deviceId);
+
+  payload = await routeros.getInterfaces(ctx);
+}
       else if (op === 'action' && req.method === 'POST') {
         const body = await readJsonBody(req);
         const host = body.host;
