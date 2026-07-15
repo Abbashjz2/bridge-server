@@ -1002,33 +1002,166 @@ wss.on('connection', (ws, req) => {
   ws.on('message', async (raw) => {
     let msg; try { msg = JSON.parse(raw.toString()); } catch { return; }
     if (!authed) {
-      if (msg.type !== 'connect') { ws.send(JSON.stringify({type:'error',message:'expected connect'})); return ws.close(); }
-      const user = await verifyJwt(msg.token);
-      if (!user) { ws.send(JSON.stringify({type:'error',message:'invalid token'})); return ws.close(); }
-      if (!isValidHost(msg.host)) { ws.send(JSON.stringify({type:'error',message:'bad host'})); return ws.close(); }
-      authed = true;
-      ssh = new SshClient();
-      ssh.on('ready', () => {
-        ws.send(JSON.stringify({type:'status',message:`connected to ${msg.host}`}));
-        ssh.shell({ term:'xterm-256color', cols:msg.cols||80, rows:msg.rows||24 }, (e, s) => {
-          if (e) { ws.send(JSON.stringify({type:'error',message:e.message})); return ws.close(); }
-          stream = s;
-          s.on('data', d => ws.readyState===ws.OPEN && ws.send(JSON.stringify({type:'data',data:d.toString('utf8')})));
-          s.stderr.on('data', d => ws.readyState===ws.OPEN && ws.send(JSON.stringify({type:'data',data:d.toString('utf8')})));
-          s.on('close', () => { ws.close(); ssh.end(); });
+  if (msg.type !== 'connect') {
+    ws.send(
+      JSON.stringify({
+        type: 'error',
+        message: 'expected connect',
+      })
+    );
+
+    return ws.close();
+  }
+
+  const user = await verifyJwt(msg.token);
+
+  if (!user || !user.id) {
+    ws.send(
+      JSON.stringify({
+        type: 'error',
+        message: 'invalid token',
+      })
+    );
+
+    return ws.close();
+  }
+
+  const tenantId = msg.tenant_id;
+  const deviceId = msg.device_id;
+
+  if (!tenantId || !deviceId) {
+    ws.send(
+      JSON.stringify({
+        type: 'error',
+        message: 'tenant_id and device_id are required',
+      })
+    );
+
+    return ws.close();
+  }
+
+  if (tenantId !== CONFIG.TENANT_ID) {
+    ws.send(
+      JSON.stringify({
+        type: 'error',
+        message: 'tenant_not_allowed',
+      })
+    );
+
+    return ws.close();
+  }
+
+  let ctx;
+
+  try {
+    ctx = await resolveDeviceFromModule(
+      tenantId,
+      deviceId
+    );
+  } catch (error) {
+    log(
+      `WS device resolution failed for ${deviceId}: ${error.message}`
+    );
+
+    ws.send(
+      JSON.stringify({
+        type: 'error',
+        message: 'device_not_found',
+      })
+    );
+
+    return ws.close();
+  }
+
+  authed = true;
+
+  ssh = new SshClient();
+
+  ssh.on('ready', () => {
+    ws.send(
+      JSON.stringify({
+        type: 'status',
+        message: `connected to ${ctx.device.name || deviceId}`,
+      })
+    );
+
+    ssh.shell(
+      {
+        term: 'xterm-256color',
+        cols: Number(msg.cols) || 80,
+        rows: Number(msg.rows) || 24,
+      },
+      (error, shellStream) => {
+        if (error) {
+          ws.send(
+            JSON.stringify({
+              type: 'error',
+              message: error.message,
+            })
+          );
+
+          return ws.close();
+        }
+
+        stream = shellStream;
+
+        shellStream.on('data', (data) => {
+          if (ws.readyState === ws.OPEN) {
+            ws.send(
+              JSON.stringify({
+                type: 'data',
+                data: data.toString('utf8'),
+              })
+            );
+          }
         });
-      });
-      ssh.on('error', e => { ws.send(JSON.stringify({type:'error',message:`ssh: ${e.message}`})); ws.close(); });
-      ssh.on('close', () => ws.close());
-      ssh.connect({
-        host: msg.host, port: parseInt(msg.port || CONFIG.MIKROTIK_PORT, 10),
-        username: msg.user || CONFIG.MIKROTIK_USER,
-        password: msg.pass || CONFIG.MIKROTIK_PASSWORD,
-        readyTimeout: CONFIG.SSH_TIMEOUT_MS, algorithms: SSH_ALGOS,
-        debug: sshDebug,
-      });
-      return;
-    }
+
+        shellStream.stderr.on('data', (data) => {
+          if (ws.readyState === ws.OPEN) {
+            ws.send(
+              JSON.stringify({
+                type: 'data',
+                data: data.toString('utf8'),
+              })
+            );
+          }
+        });
+
+        shellStream.on('close', () => {
+          ws.close();
+          ssh.end();
+        });
+      }
+    );
+  });
+
+  ssh.on('error', (error) => {
+    ws.send(
+      JSON.stringify({
+        type: 'error',
+        message: `ssh: ${error.message}`,
+      })
+    );
+
+    ws.close();
+  });
+
+  ssh.on('close', () => {
+    ws.close();
+  });
+
+  ssh.connect({
+    host: ctx.host,
+    port: CONFIG.MIKROTIK_PORT,
+    username: ctx.user || CONFIG.MIKROTIK_USER,
+    password: ctx.pass || CONFIG.MIKROTIK_PASSWORD,
+    readyTimeout: CONFIG.SSH_TIMEOUT_MS,
+    algorithms: SSH_ALGOS,
+    debug: sshDebug,
+  });
+
+  return;
+}
     if (msg.type === 'data' && stream) stream.write(msg.data);
     else if (msg.type === 'resize' && stream) stream.setWindow(msg.rows, msg.cols, 0, 0);
   });
