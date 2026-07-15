@@ -793,23 +793,61 @@ else if (op === 'traffic' && req.method === 'POST') {
         const ctx = { host, user: body.user || undefined, pass: body.pass || undefined };
         log(`ACTION ${user.email || user.id} -> ${host} as ${ctx.user || 'env'} ${JSON.stringify({ ...body, host: undefined, user: undefined, pass: undefined })}`);
         payload = await runAction(ctx, body);
-      } else if (op === 'backup' && req.method === 'POST') {
-        const body = await readJsonBody(req);
-        const host = body.host;
-        if (!isValidHost(host)) { res.writeHead(400, CORS); return res.end('{"error":"bad host"}'); }
-        const ctx = { host, user: body.user || undefined, pass: body.pass || undefined };
-        log(`BACKUP ${user.email || user.id} -> ${host} as ${ctx.user || 'env'}`);
-        const { filename, buffer } = await createAndFetchBackup(ctx);
-        res.writeHead(200, {
-          ...CORS,
-          'Content-Type': 'application/octet-stream',
-          'Content-Disposition': `attachment; filename="${filename}"`,
-          'X-Backup-Filename': filename,
-          'Access-Control-Expose-Headers': 'X-Backup-Filename, Content-Disposition',
-          'Content-Length': buffer.length,
-        });
-        return res.end(buffer);
-      } else {
+      } 
+      else if (op === 'backup' && req.method === 'POST') {
+  const body = await readJsonBody(req);
+
+  const tenantId = body.tenant_id;
+  const deviceId = body.device_id;
+
+  if (!tenantId || !deviceId) {
+    res.writeHead(400, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    return res.end(
+      JSON.stringify({
+        error: 'tenant_id and device_id are required',
+      })
+    );
+  }
+
+  if (tenantId !== CONFIG.TENANT_ID) {
+    res.writeHead(403, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    return res.end(
+      JSON.stringify({
+        error: 'tenant_not_allowed',
+      })
+    );
+  }
+
+  const ctx = await resolveDeviceFromModule(tenantId, deviceId);
+
+  log(
+    `BACKUP ${user.email || user.id} -> device ${deviceId}`
+  );
+
+  const { filename, buffer } =
+    await routeros.createAndFetchBackup(ctx);
+
+  res.writeHead(200, {
+    ...CORS,
+    'Content-Type': 'application/octet-stream',
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    'X-Backup-Filename': filename,
+    'Access-Control-Expose-Headers':
+      'X-Backup-Filename, Content-Disposition',
+    'Content-Length': buffer.length,
+  });
+
+  return res.end(buffer);
+}
+       else {
         const host = url.searchParams.get('host');
         if (op === 'scripts') payload = { scripts: Object.keys(SAVED_SCRIPTS) };
         else if (op === 'ping') {
