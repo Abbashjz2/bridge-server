@@ -613,7 +613,9 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname === '/' || url.pathname === '/health') {
     res.writeHead(200, { ...CORS, 'Content-Type': 'text/plain' });
-    return res.end(`device-bridge-server ok (pool=${apiPool.size})\n`);
+    return res.end(
+  `device-bridge-server ok (pool=${routeros.getPoolSize()})\n`
+);
   }
 
   if (url.pathname.startsWith('/api/device/')) {
