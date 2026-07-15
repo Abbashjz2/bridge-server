@@ -787,13 +787,40 @@ else if (op === 'traffic' && req.method === 'POST') {
 }
 
       else if (op === 'action' && req.method === 'POST') {
-        const body = await readJsonBody(req);
-        const host = body.host;
-        if (!isValidHost(host)) { res.writeHead(400, CORS); return res.end('{"error":"bad host"}'); }
-        const ctx = { host, user: body.user || undefined, pass: body.pass || undefined };
-        log(`ACTION ${user.email || user.id} -> ${host} as ${ctx.user || 'env'} ${JSON.stringify({ ...body, host: undefined, user: undefined, pass: undefined })}`);
-        payload = await runAction(ctx, body);
-      } 
+  const body = await readJsonBody(req);
+
+  const tenantId = body.tenant_id;
+  const deviceId = body.device_id;
+
+  if (!tenantId || !deviceId) {
+    res.writeHead(400, {
+      ...CORS,
+      "Content-Type": "application/json",
+    });
+
+    return res.end(JSON.stringify({
+      error: "tenant_id and device_id are required",
+    }));
+  }
+
+  if (tenantId !== CONFIG.TENANT_ID) {
+    res.writeHead(403, {
+      ...CORS,
+      "Content-Type": "application/json",
+    });
+
+    return res.end(JSON.stringify({
+      error: "tenant_not_allowed",
+    }));
+  }
+
+  const ctx = await resolveDeviceFromModule(
+    tenantId,
+    deviceId
+  );
+
+  payload = await routeros.runAction(ctx, body);
+}
       else if (op === 'backup' && req.method === 'POST') {
   const body = await readJsonBody(req);
 
