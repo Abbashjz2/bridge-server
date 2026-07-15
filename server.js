@@ -662,7 +662,12 @@ const server = http.createServer(async (req, res) => {
 
   const ctx = await resolveDeviceFromModule(tenantId, deviceId);
 
-  payload = await getOverview(ctx);
+  const routeros = createRouterOsService({
+    config: CONFIG,
+    log,
+});
+
+payload = await routeros.getOverview(ctx);
 }
       else if (op === 'action' && req.method === 'POST') {
         const body = await readJsonBody(req);
