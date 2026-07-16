@@ -204,6 +204,55 @@ function readJsonBody(req) {
   });
 }
 
+async function resolveRequestDevice(req, res) {
+  const body = await readJsonBody(req);
+
+  const tenantId = body.tenant_id;
+  const deviceId = body.device_id;
+
+  if (!tenantId || !deviceId) {
+    res.writeHead(400, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    res.end(
+      JSON.stringify({
+        error: 'tenant_id and device_id are required',
+      })
+    );
+
+    return null;
+  }
+
+  if (tenantId !== CONFIG.TENANT_ID) {
+    res.writeHead(403, {
+      ...CORS,
+      'Content-Type': 'application/json',
+    });
+
+    res.end(
+      JSON.stringify({
+        error: 'tenant_not_allowed',
+      })
+    );
+
+    return null;
+  }
+
+  const ctx = await resolveDeviceFromModule(
+    tenantId,
+    deviceId
+  );
+
+  return {
+    body,
+    tenantId,
+    deviceId,
+    ctx,
+  };
+}
+
 // ============================================================
 // HTTP
 // ============================================================
@@ -228,78 +277,22 @@ const server = http.createServer(async (req, res) => {
       const op = url.pathname.replace('/api/device/', '');
       let payload;
       if (op === 'overview' && req.method === 'POST') {
-  const body = await readJsonBody(req);
+   const resolved = await resolveRequestDevice(req, res);
 
-  const tenantId = body.tenant_id;
-  const deviceId = body.device_id;
-
-  if (!tenantId || !deviceId) {
-    res.writeHead(400, {
-      ...CORS,
-      'Content-Type': 'application/json',
-    });
-
-    return res.end(
-      JSON.stringify({
-        error: 'tenant_id and device_id are required',
-      })
-    );
-  }
-
-  if (tenantId !== CONFIG.TENANT_ID) {
-    res.writeHead(403, {
-      ...CORS,
-      'Content-Type': 'application/json',
-    });
-
-    return res.end(
-      JSON.stringify({
-        error: 'tenant_not_allowed',
-      })
-    );
-  }
-
-  const ctx = await resolveDeviceFromModule(tenantId, deviceId);
-
+  if (!resolved) return;
 
 
 payload = await routeros.getOverview(ctx);
 }
-      else if (op === 'interfaces' && req.method === 'POST') {
-  const body = await readJsonBody(req);
+      else if (
+  op === 'interfaces' &&
+  req.method === 'POST'
+) {
+  const resolved = await resolveRequestDevice(req, res);
 
-  const tenantId = body.tenant_id;
-  const deviceId = body.device_id;
+  if (!resolved) return;
 
-  if (!tenantId || !deviceId) {
-    res.writeHead(400, {
-      ...CORS,
-      'Content-Type': 'application/json',
-    });
-
-    return res.end(
-      JSON.stringify({
-        error: 'tenant_id and device_id are required',
-      })
-    );
-  }
-
-  if (tenantId !== CONFIG.TENANT_ID) {
-    res.writeHead(403, {
-      ...CORS,
-      'Content-Type': 'application/json',
-    });
-
-    return res.end(
-      JSON.stringify({
-        error: 'tenant_not_allowed',
-      })
-    );
-  }
-
-  const ctx = await resolveDeviceFromModule(tenantId, deviceId);
-
-  payload = await routeros.getInterfaces(ctx);
+  payload = await routeros.getInterfaces(resolved.ctx);
 }
       else if (op === 'logs' && req.method === 'POST') {
   const body = await readJsonBody(req);
