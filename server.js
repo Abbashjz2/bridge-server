@@ -53,7 +53,7 @@ const {
 const {
   createMonitorService,
 } = require('./lib/monitor');
-
+const { createJwtService } = require('./lib/jwt');
 
 
 function patchRouterOsEmptyReply() {
@@ -143,6 +143,10 @@ const routeros = createRouterOsService({
   config: CONFIG,
   log,
 });
+const jwtService = createJwtService({
+  config: CONFIG,
+  log,
+});
 const {
   resolveDevice: resolveDeviceFromModule,
   clearDeviceCache,
@@ -157,16 +161,7 @@ const {
 process.on('uncaughtException', (e) => log(`uncaughtException: ${e && e.message}`));
 process.on('unhandledRejection', (e) => log(`unhandledRejection: ${e && e.message}`));
 
-async function verifyJwt(token) {
-  if (!token) return null;
-  try {
-    const res = await fetch(`${CONFIG.SUPABASE_URL}/auth/v1/user`, {
-      headers: { apikey: CONFIG.SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch { return null; }
-}
+
 
 function isValidHost(h) {
   if (typeof h !== 'string' || h.length === 0 || h.length > 253) return false;
@@ -254,7 +249,7 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/device/')) {
     try {
       const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-      const user = await verifyJwt(token);
+      const user = await jwtService.verifyJwt(token);
       if (!user || !user.id) { res.writeHead(401, CORS); return res.end('{"error":"unauthorized"}'); }
 
       const op = url.pathname.replace('/api/device/', '');
@@ -632,7 +627,7 @@ wss.on('connection', (ws, req) => {
     return ws.close();
   }
 
-  const user = await verifyJwt(msg.token);
+  const user = await jwtService.verifyJwt(msg.token);
 
   if (!user || !user.id) {
     ws.send(
