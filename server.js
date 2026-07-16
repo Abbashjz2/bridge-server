@@ -38,7 +38,6 @@ const http = require('http');
 const os = require('os');
 const { WebSocketServer } = require('ws');
 const { Client: SshClient } = require('ssh2');
-const { execFile } = require('child_process');
 const fetch = require('node-fetch');
 const { RouterOSAPI } = require('node-routeros');
 const { configDotenv } = require('dotenv');
@@ -51,54 +50,10 @@ const {
   getHardwareFingerprint,
   createLicenseService,
 } = require('./lib/license');
-// ============================================================
-// Lightweight ICMP ping (single packet, tiny payload, 1s timeout).
-// Used by the technical devices table to show live up/down dots.
-// ============================================================
-function pingOnce(host, sizeBytes = 16, timeoutMs = 1000) {
-  return new Promise((resolve) => {
-    const isWin = process.platform === 'win32';
-    const size = Math.max(1, Math.min(1500, Number(sizeBytes) || 16));
-    const tWin = Math.max(200, Math.min(5000, Number(timeoutMs) || 1000));
-    const tSec = Math.max(1, Math.ceil(tWin / 1000));
-    const args = isWin
-      ? ['-n', '1', '-l', String(size), '-w', String(tWin), host]
-      : ['-c', '1', '-W', String(tSec), '-s', String(size), host];
-    const start = Date.now();
-    execFile('ping', args, { timeout: tWin + 500, windowsHide: true }, (err, stdout) => {
-      if (err) return resolve({ up: false, rttMs: null });
-      const m = String(stdout).match(/time[=<]\s*([\d.]+)\s*ms/i);
-      const rttMs = m ? parseFloat(m[1]) : (Date.now() - start);
-      resolve({ up: true, rttMs });
-    });
-  });
-}
+const {
+  createMonitorService,
+} = require('./lib/monitor');
 
-async function pingMany(host, count, sizeBytes) {
-  const safeCount = Math.max(1, Math.min(20, Number(count) || 4));
-  const safeSize = Math.max(1, Math.min(1500, Number(sizeBytes) || 64));
-  const results = [];
-  for (let i = 0; i < safeCount; i++) {
-    const r = await pingOnce(host, safeSize, 2000);
-    results.push({
-      seq: i + 1,
-      status: r.up ? 'reply' : 'timeout',
-      time: r.up ? Math.round(r.rttMs * 100) / 100 : null,
-      bytes: safeSize,
-    });
-  }
-  const replied = results.filter((r) => r.status === 'reply');
-  const times = replied.map((r) => r.time);
-  const stats = times.length
-    ? {
-        min: Math.min(...times),
-        max: Math.max(...times),
-        avg: Math.round((times.reduce((a, b) => a + b, 0) / times.length) * 100) / 100,
-        loss: Math.round(((safeCount - replied.length) / safeCount) * 100),
-      }
-    : { min: 0, max: 0, avg: 0, loss: 100 };
-  return { results, stats };
-}
 
 
 function patchRouterOsEmptyReply() {
@@ -604,14 +559,18 @@ else if (op === 'traffic' && req.method === 'POST') {
           if (!isValidHost(host)) { res.writeHead(400, CORS); return res.end('{"error":"bad host"}'); }
           const count = Number(url.searchParams.get('count') || 0);
           const size = Number(url.searchParams.get('size') || 0);
-          if (count > 0) payload = await pingMany(host, count, size || 64);
+          if (count > 0) payload = await monitorService.pingMany(
+  host,
+  count,
+  size || 64
+);
           else {
             // Status check: 1 packet; if unreachable, retry up to 4 more
             // consecutive packets and only report down if all fail.
-            let r = await pingOnce(host, size || 16, 1000);
+            let r = await monitorService.pingOnce(host, size || 16, 1000);
             if (!r.up) {
               for (let i = 0; i < 4; i++) {
-                r = await pingOnce(host, size || 16, 1000);
+                r = await monitorService.pingOnce(host, size || 16, 1000);
                 if (r.up) break;
               }
             }
@@ -853,7 +812,7 @@ async function startServer() {
     log('  NOTE: enable RouterOS API on each device:  /ip service enable api');
     log('========================================');
 
-    startTelegramMonitor();
+    monitorService.start();
 
     const startupMessage =
       `🟢 <b>Bridge Server Online</b>\n\n` +
@@ -881,38 +840,8 @@ startServer();
 // - Does NOT write to the database. Does NOT keep ping history.
 // ============================================================================
 
-const monitorState = new Map(); // ip -> { status:'online'|'offline', name, since:Date }
 
-async function fetchMonitoredDevices() {
-  if (!CONFIG.TENANT_ID) return [];
-  if (!CONFIG.MONITOR_SHARED_SECRET) {
-    log('monitor: MONITOR_SHARED_SECRET not set, cannot fetch devices');
-    return [];
-  }
-  try {
-    const res = await fetch(`${CONFIG.SUPABASE_URL}/functions/v1/monitor-devices`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-monitor-secret': CONFIG.MONITOR_SHARED_SECRET,
-        // Edge function deploys with verify_jwt=false; anon key kept for gateway sanity.
-        apikey: CONFIG.SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({ tenant_id: CONFIG.TENANT_ID }),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      log(`monitor: fetch devices failed: HTTP ${res.status} ${text.slice(0, 200)}`);
-      return [];
-    }
-    const data = await res.json();
-    return Array.isArray(data.devices) ? data.devices : [];
-  } catch (e) {
-    log(`monitor: fetch devices failed: ${e.message}`);
-    return [];
-  }
-}
+
 
 async function sendTelegram(text) {
   if (!CONFIG.TELEGRAM_BOT_TOKEN || !CONFIG.TELEGRAM_CHAT_ID) return;
@@ -935,6 +864,11 @@ async function sendTelegram(text) {
     req.end();
   });
 }
+const monitorService = createMonitorService({
+  config: CONFIG,
+  log,
+  sendTelegram,
+});
 let isShuttingDown = false;
 
 async function gracefulShutdown(signal) {
@@ -975,7 +909,7 @@ async function gracefulShutdown(signal) {
       // Ignore close errors.
     }
   }
-
+  monitorService.stop();
   // Stop accepting HTTP and WebSocket connections.
   server.close(() => {
     clearTimeout(forceExitTimer);
@@ -986,111 +920,12 @@ async function gracefulShutdown(signal) {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-async function confirmedPing(host) {
-  let r = await pingOnce(host, 16, 1000);
-  if (r.up) return true;
-  for (let i = 0; i < CONFIG.MONITOR_RETRY_COUNT; i++) {
-    r = await pingOnce(host, 16, 1000);
-    if (r.up) return true;
-  }
-  return false;
-}
+
 
 // Run async work with a concurrency limit to avoid spawning too many
 // child ping processes at once.
-async function asyncPool(concurrency, items, fn) {
-  const results = [];
-  const executing = new Set();
-  for (const item of items) {
-    const p = Promise.resolve().then(() => fn(item));
-    results.push(p);
-    executing.add(p);
-    const clean = () => executing.delete(p);
-    p.then(clean).catch(clean);
-    if (executing.size >= concurrency) {
-      await Promise.race(executing);
-    }
-  }
-  return Promise.all(results);
-}
 
 
-async function monitorTick() {
-  const tickStart = Date.now();
-  const devices = await fetchMonitoredDevices();
-  if (!devices.length) return;
-  await asyncPool(Math.max(1, CONFIG.MONITOR_CONCURRENCY), devices, async (d) => {
-    const alive = await confirmedPing(d.ip);
-    const status = alive ? 'online' : 'offline';
-    const prev = monitorState.get(d.ip);
-    const now = Date.now();
-    const isElec = d.kind === 'electricity';
-    const confirmMs = Math.max(0, (Number(d.offline_confirm_seconds) || 0) * 1000);
 
-    if (!prev) {
-      monitorState.set(d.ip, { status, name: d.name, since: new Date(now), pendingOfflineSince: null });
-      return;
-    }
 
-    // Debounce offline for devices that ask for a confirmation window (electricity: 120s)
-    if (confirmMs > 0 && prev.status === 'online' && status === 'offline') {
-      const pendingSince = prev.pendingOfflineSince || now;
-      if (now - pendingSince < confirmMs) {
-        monitorState.set(d.ip, { ...prev, pendingOfflineSince: pendingSince });
-        return; // not yet confirmed offline
-      }
-      // confirmed offline after the window
-    } else if (status === 'online' && prev.pendingOfflineSince) {
-      // recovered before window expired — cancel pending
-      monitorState.set(d.ip, { ...prev, pendingOfflineSince: null });
-      if (prev.status === 'online') return;
-    }
 
-    if (prev.status !== status) {
-      const mins = Math.round((now - prev.since.getTime()) / 60000);
-      const emoji = alive ? '✅' : '🔴';
-      let label = alive ? 'BACK ONLINE' : 'OFFLINE';
-      let header;
-      if (isElec) {
-        label = alive ? 'ELECTRICITY RESTORED' : 'NO ELECTRICITY';
-        const areaLabel = d.location || d.name;
-        header = `${emoji} <b>Area ${areaLabel}</b>: <b>${label}</b>`;
-      } else {
-        header = `${emoji} <b>${d.name}</b> is <b>${label}</b>`;
-      }
-      const msg =
-        `${header}\n` +
-        `📍 IP: <code>${d.ip}</code>\n` +
-        (d.type ? `📶 Type: ${d.type}\n` : '') +
-        (d.location ? `📌 Location: ${d.location}\n` : '') +
-        `⏱ Was ${prev.status} for ~${mins} min\n` +
-        `🕐 ${new Date().toLocaleString()}`;
-      log(`monitor: ${d.name} (${d.ip}) ${prev.status} -> ${status}${isElec ? ' [electricity]' : ''}`);
-      monitorState.set(d.ip, { status, name: d.name, since: new Date(now), pendingOfflineSince: null });
-      try { await sendTelegram(msg); } catch (e) { log(`telegram send failed: ${e.message}`); }
-    } else {
-      // no state change; make sure pending is cleared on stable online
-      if (status === 'online' && prev.pendingOfflineSince) {
-        monitorState.set(d.ip, { ...prev, pendingOfflineSince: null });
-      }
-    }
-  });
-  log(`monitor tick: ${devices.length} devices checked in ${Date.now() - tickStart}ms`);
-}
-
-function startTelegramMonitor() {
-  if (!CONFIG.TENANT_ID) {
-    log('Telegram monitor: DISABLED (TENANT_ID not set)');
-    return;
-  }
-  if (!CONFIG.TELEGRAM_BOT_TOKEN || !CONFIG.TELEGRAM_CHAT_ID) {
-    log('Telegram monitor: DISABLED (TELEGRAM_BOT_TOKEN/CHAT_ID not set)');
-    return;
-  }
-  log(`Telegram monitor: ENABLED, interval=${CONFIG.MONITOR_INTERVAL_MS}ms, retry=${CONFIG.MONITOR_RETRY_COUNT}, concurrency=${CONFIG.MONITOR_CONCURRENCY}`);
-  // initial seed + loop
-  monitorTick().catch((e) => log(`monitor tick error: ${e.message}`));
-  setInterval(() => {
-    monitorTick().catch((e) => log(`monitor tick error: ${e.message}`));
-  }, CONFIG.MONITOR_INTERVAL_MS);
-}
