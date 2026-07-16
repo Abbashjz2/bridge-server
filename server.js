@@ -57,24 +57,12 @@ const { createJwtService } = require('./lib/jwt');
 const {
   createTelegramService,
 } = require('./lib/telegram');
-const monitorService = createMonitorService({
-    config: CONFIG,
-    log,
-    sendTelegram: telegramService.sendTelegram,
-});
+
 const {
   createDeviceRoutes,
 } = require('./routes/deviceRoutes');
 
-const deviceRoutes = createDeviceRoutes({
-  config: CONFIG,
-  cors: CORS,
-  log,
-  jwtService,
-  routeros,
-  monitorService,
-  resolveDevice: resolveDeviceFromModule,
-});
+
 function patchRouterOsEmptyReply() {
   try {
     const { Channel } = require('node-routeros/dist/Channel');
@@ -145,7 +133,20 @@ const {
   bridgeValidationSecret: CONFIG.BRIDGE_VALIDATION_SECRET,
   log,
 });
-
+const monitorService = createMonitorService({
+    config: CONFIG,
+    log,
+    sendTelegram: telegramService.sendTelegram,
+});
+const deviceRoutes = createDeviceRoutes({
+  config: CONFIG,
+  cors: CORS,
+  log,
+  jwtService,
+  routeros,
+  monitorService,
+  resolveDevice: resolveDeviceFromModule,
+});
 // node-routeros can synchronously throw on certain unexpected replies
 // (e.g. "!empty"). Don't let that kill the whole bridge process.
 process.on('uncaughtException', (e) => log(`uncaughtException: ${e && e.message}`));
