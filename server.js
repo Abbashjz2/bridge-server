@@ -36,8 +36,6 @@
 require('dotenv').config();
 const http = require('http');
 const os = require('os');
-const fs = require('fs');
-const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { Client: SshClient } = require('ssh2');
 const { execFile } = require('child_process');
@@ -49,7 +47,10 @@ const {
     createRouterOsService,
     SSH_ALGOS,
 } = require('./lib/routeros');
-
+const {
+  getHardwareFingerprint,
+  createLicenseService,
+} = require('./lib/license');
 // ============================================================
 // Lightweight ICMP ping (single packet, tiny payload, 1s timeout).
 // Used by the technical devices table to show live up/down dots.
@@ -137,29 +138,7 @@ function patchRouterOsEmptyReply() {
 }
 
 
-function getHardwareFingerprint() {
-  let machineId = '';
-  let cpuSerial = '';
 
-  try {
-    machineId = fs.readFileSync('/etc/machine-id', 'utf8').trim();
-  } catch {
-    machineId = 'no-machine-id';
-  }
-
-  try {
-    const cpuInfo = fs.readFileSync('/proc/cpuinfo', 'utf8');
-    const match = cpuInfo.match(/^Serial\s*:\s*(.+)$/m);
-    cpuSerial = match ? match[1].trim() : 'no-cpu-serial';
-  } catch {
-    cpuSerial = 'no-cpu-serial';
-  }
-
-  return crypto
-    .createHash('sha256')
-    .update(`${machineId}|${cpuSerial}`)
-    .digest('hex');
-}
 const CONFIG = {
   SUPABASE_URL: process.env.SUPABASE_URL || 'https://vcabaubdlvjzeczfyfgc.supabase.co',
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
@@ -188,55 +167,7 @@ const CONFIG = {
   // behalf, so we don't need to expose the service role key on this server).
   MONITOR_SHARED_SECRET: process.env.MONITOR_SHARED_SECRET || '123456@@',
 };
-async function validateLicense() {
-  if (!CONFIG.TENANT_ID) {
-    throw new Error('TENANT_ID is missing');
-  }
 
-  if (!CONFIG.INSTALLATION_ID) {
-    throw new Error('INSTALLATION_ID is missing');
-  }
-
-  if (!CONFIG.LICENSE_KEY) {
-    throw new Error('LICENSE_KEY is missing');
-  }
-
-  if (!CONFIG.HARDWARE_FINGERPRINT) {
-    throw new Error('HARDWARE_FINGERPRINT is missing');
-  }
-
-  if (!CONFIG.BRIDGE_VALIDATION_SECRET) {
-    throw new Error('BRIDGE_VALIDATION_SECRET is missing');
-  }
-
-  const response = await fetch(
-    `${CONFIG.SUPABASE_URL}/functions/v1/validate-bridge-license`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-bridge-secret': CONFIG.BRIDGE_VALIDATION_SECRET,
-      },
-      body: JSON.stringify({
-        tenant_id: CONFIG.TENANT_ID,
-        license_key: CONFIG.LICENSE_KEY,
-        installation_id: CONFIG.INSTALLATION_ID,
-        hardware_fingerprint: CONFIG.HARDWARE_FINGERPRINT,
-      }),
-    }
-  );
-
-  const result = await response.json().catch(() => ({}));
-
-  if (!response.ok || result.valid !== true) {
-    throw new Error(
-      result.reason || `license server returned HTTP ${response.status}`
-    );
-  }
-
-  log('License validation successful');
-  return true;
-}
 
 
 
@@ -249,6 +180,10 @@ const CORS = {
 };
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
+const licenseService = createLicenseService({
+  config: CONFIG,
+  log,
+});
 const routeros = createRouterOsService({
   config: CONFIG,
   log,
@@ -901,7 +836,7 @@ async function startServer() {
   // Validate before opening the HTTP/WebSocket port.
   try {
     log('Validating bridge license...');
-    await validateLicense();
+    await licenseService.validateLicense();
   } catch (e) {
     log(`License validation failed: ${e.message}`);
     process.exit(1);
