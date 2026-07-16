@@ -54,7 +54,9 @@ const {
   createMonitorService,
 } = require('./lib/monitor');
 const { createJwtService } = require('./lib/jwt');
-
+const {
+  createTelegramService,
+} = require('./lib/telegram');
 
 function patchRouterOsEmptyReply() {
   try {
@@ -147,6 +149,11 @@ const jwtService = createJwtService({
   config: CONFIG,
   log,
 });
+const telegramService =
+  createTelegramService({
+    config: CONFIG,
+    log,
+  });
 const {
   resolveDevice: resolveDeviceFromModule,
   clearDeviceCache,
@@ -817,7 +824,7 @@ async function startServer() {
       `🕐 ${new Date().toLocaleString()}`;
 
     try {
-      await sendTelegram(startupMessage);
+      await telegramService.sendTelegram(startupMessage);
       log('Startup Telegram notification sent');
     } catch (e) {
       log(`Startup Telegram notification failed: ${e.message}`);
@@ -835,34 +842,10 @@ startServer();
 // - Does NOT write to the database. Does NOT keep ping history.
 // ============================================================================
 
-
-
-
-async function sendTelegram(text) {
-  if (!CONFIG.TELEGRAM_BOT_TOKEN || !CONFIG.TELEGRAM_CHAT_ID) return;
-  return new Promise((resolve) => {
-    const body = JSON.stringify({
-      chat_id: CONFIG.TELEGRAM_CHAT_ID,
-      text,
-      parse_mode: 'HTML',
-    });
-    const req = require('https').request(
-      `https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-      },
-      (res) => { res.on('data', () => {}); res.on('end', resolve); }
-    );
-    req.on('error', (e) => { log(`Telegram error: ${e.message}`); resolve(); });
-    req.write(body);
-    req.end();
-  });
-}
 const monitorService = createMonitorService({
-  config: CONFIG,
-  log,
-  sendTelegram,
+    config: CONFIG,
+    log,
+    sendTelegram: telegramService.sendTelegram,
 });
 let isShuttingDown = false;
 
@@ -887,7 +870,7 @@ async function gracefulShutdown(signal) {
   forceExitTimer.unref?.();
 
   try {
-    await sendTelegram(shutdownMessage);
+    await telegramService.sendTelegram(shutdownMessage);
     log('Shutdown Telegram notification sent');
   } catch (e) {
     log(`Shutdown Telegram notification failed: ${e.message}`);
