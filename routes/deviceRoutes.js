@@ -175,9 +175,10 @@ async function runWithCredentialRetry(
 
       if (!resolved) return true;
 
-      const payload = await routeros.getInterfaces(
-        resolved.ctx
-      );
+      const payload = await runWithCredentialRetry(
+    resolved,
+    (ctx) => routeros.getInterfaces(ctx)
+);
 
       sendJson(res, 200, payload);
       return true;
@@ -189,10 +190,14 @@ async function runWithCredentialRetry(
 
       if (!resolved) return true;
 
-      const payload = await routeros.getLogs(
-        resolved.ctx,
-        resolved.body.limit
-      );
+      const payload = await runWithCredentialRetry(
+    resolved,
+    (ctx) =>
+        routeros.getLogs(
+            ctx,
+            resolved.body.limit
+        )
+);
 
       sendJson(res, 200, payload);
       return true;
@@ -204,10 +209,14 @@ async function runWithCredentialRetry(
 
       if (!resolved) return true;
 
-      const payload = await routeros.getTraffic(
-        resolved.ctx,
-        resolved.body.iface
-      );
+      const payload = await runWithCredentialRetry(
+    resolved,
+    (ctx) =>
+        routeros.getTraffic(
+            ctx,
+            resolved.body.iface
+        )
+);
 
       sendJson(res, 200, payload);
       return true;
@@ -220,9 +229,11 @@ async function runWithCredentialRetry(
       if (!resolved) return true;
 
       const payload =
-        await routeros.getWirelessRegistrations(
-          resolved.ctx
-        );
+    await runWithCredentialRetry(
+        resolved,
+        (ctx) =>
+            routeros.getWirelessRegistrations(ctx)
+    );
 
       sendJson(res, 200, payload);
       return true;
@@ -234,11 +245,15 @@ async function runWithCredentialRetry(
 
       if (!resolved) return true;
 
-      const payload = await routeros.runAction(
-        resolved.ctx,
-        resolved.body
-      );
-
+      const payload =
+    await runWithCredentialRetry(
+        resolved,
+        (ctx) =>
+            routeros.runAction(
+                ctx,
+                resolved.body
+            )
+    );
       sendJson(res, 200, payload);
       return true;
     }
@@ -255,9 +270,11 @@ async function runWithCredentialRetry(
       );
 
       const { filename, buffer } =
-        await routeros.createAndFetchBackup(
-          resolved.ctx
-        );
+    await runWithCredentialRetry(
+        resolved,
+        (ctx) =>
+            routeros.createAndFetchBackup(ctx)
+    );
 
       res.writeHead(200, {
         ...cors,
