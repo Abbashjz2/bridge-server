@@ -126,8 +126,7 @@ const telegramService =
     log,
   });
 const {
-  resolveDevice: resolveDeviceFromModule,
-  clearDeviceCache,
+  resolveDevice,
 } = createDeviceResolver({
   supabaseUrl: CONFIG.SUPABASE_URL,
   bridgeValidationSecret: CONFIG.BRIDGE_VALIDATION_SECRET,
@@ -145,7 +144,7 @@ const deviceRoutes = createDeviceRoutes({
   jwtService,
   routeros,
   monitorService,
-  resolveDevice: resolveDeviceFromModule,
+  resolveDevice,
 });
 // node-routeros can synchronously throw on certain unexpected replies
 // (e.g. "!empty"). Don't let that kill the whole bridge process.
@@ -263,7 +262,7 @@ wss.on('connection', (ws, req) => {
   let ctx;
 
   try {
-    ctx = await resolveDeviceFromModule(
+    ctx = await resolveDevice(
       tenantId,
       deviceId
     );
