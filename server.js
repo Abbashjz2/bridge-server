@@ -282,7 +282,7 @@ const server = http.createServer(async (req, res) => {
   if (!resolved) return;
 
 
-payload = await routeros.getOverview(ctx);
+payload = await routeros.getOverview(resolved.ctx);
 }
       else if (
   op === 'interfaces' &&
