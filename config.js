@@ -88,6 +88,12 @@ const CONFIG = {
 
   MONITOR_SHARED_SECRET:
     process.env.MONITOR_SHARED_SECRET || '',
+
+    LICENSE_RECHECK_MS: parseInt(
+  process.env.LICENSE_RECHECK_MS ||
+    String(6 * 60 * 60 * 1000),
+  10
+),
 };
 
 module.exports = {

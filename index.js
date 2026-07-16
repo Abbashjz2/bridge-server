@@ -402,7 +402,22 @@ async function startServer() {
     log('========================================');
 
     monitorService.start();
+    licenseService.startPeriodicValidation({
+  intervalMs: CONFIG.LICENSE_RECHECK_MS,
 
+  onInvalid: async (error) => {
+    const message =
+      `⛔ <b>Bridge License Disabled</b>\n\n` +
+      `🖥 Hostname: <code>${os.hostname()}</code>\n` +
+      `📦 Installation: <code>${CONFIG.INSTALLATION_ID}</code>\n` +
+      `⚠️ Reason: <code>${error.message}</code>\n` +
+      `🕐 ${new Date().toLocaleString()}`;
+
+    await telegramService.sendTelegram(message);
+
+    await gracefulShutdown('LICENSE_INVALID');
+  },
+});
     const startupMessage =
       `🟢 <b>Bridge Server Online</b>\n\n` +
       `🖥 Hostname: <code>${os.hostname()}</code>\n` +
@@ -471,6 +486,7 @@ async function gracefulShutdown(signal) {
     }
   }
   monitorService.stop();
+  licenseService.stopPeriodicValidation();
   // Stop accepting HTTP and WebSocket connections.
   server.close(() => {
     clearTimeout(forceExitTimer);
