@@ -18,7 +18,42 @@ function createDeviceRoutes({
 
     return /^[a-zA-Z0-9.\-_]+$/.test(host);
   }
+function isAuthenticationError(error) {
+  const message = String(
+    error?.message || error || ''
+  );
 
+  return /authentication|invalid user|invalid password|login failed|cannot log in|not logged in/i.test(
+    message
+  );
+}
+
+async function runWithCredentialRetry(
+  resolved,
+  operation
+) {
+  try {
+    return await operation(resolved.ctx);
+  } catch (error) {
+    if (!isAuthenticationError(error)) {
+      throw error;
+    }
+
+    log(
+      `Device authentication failed; refreshing credentials for ${resolved.deviceId}`
+    );
+
+    const freshCtx = await resolveDevice(
+      resolved.tenantId,
+      resolved.deviceId,
+      {
+        forceRefresh: true,
+      }
+    );
+
+    return operation(freshCtx);
+  }
+}
   function readJsonBody(req) {
     return new Promise((resolve, reject) => {
       let buffer = '';
@@ -125,9 +160,10 @@ function createDeviceRoutes({
 
       if (!resolved) return true;
 
-      const payload = await routeros.getOverview(
-        resolved.ctx
-      );
+      const payload = await runWithCredentialRetry(
+  resolved,
+  (ctx) => routeros.getOverview(ctx)
+);
 
       sendJson(res, 200, payload);
       return true;

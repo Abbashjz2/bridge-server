@@ -35,40 +35,56 @@ function createDeviceCache({ supabaseUrl, bridgeValidationSecret, log }) {
     return result.device;
   }
 
-  async function resolveDevice(tenantId, deviceId) {
-    const key = deviceCacheKey(tenantId, deviceId);
-    const cached = deviceCache.get(key);
-    const now = Date.now();
+  async function resolveDevice(
+  tenantId,
+  deviceId,
+  options = {}
+) {
+  const key = deviceCacheKey(tenantId, deviceId);
+  const cached = deviceCache.get(key);
+  const now = Date.now();
+  const forceRefresh = options.forceRefresh === true;
 
-    if (cached && now - cached.fetchedAt < DEVICE_CACHE_TTL_MS) {
-      log(`Device cache HIT: ${deviceId}`);
-
-      return {
-        host: cached.ip,
-        user: cached.username,
-        pass: cached.password,
-        device: cached,
-      };
-    }
-
-    log(`Device cache MISS: ${deviceId}`);
-
-    const device = await getBridgeDevice(tenantId, deviceId);
-
-    const entry = {
-      ...device,
-      fetchedAt: now,
-    };
-
-    deviceCache.set(key, entry);
+  if (
+    !forceRefresh &&
+    cached &&
+    now - cached.fetchedAt < DEVICE_CACHE_TTL_MS
+  ) {
+    log(`Device cache HIT: ${deviceId}`);
 
     return {
-      host: entry.ip,
-      user: entry.username,
-      pass: entry.password,
-      device: entry,
+      host: cached.ip,
+      user: cached.username,
+      pass: cached.password,
+      device: cached,
     };
   }
+
+  log(
+    forceRefresh
+      ? `Device cache REFRESH: ${deviceId}`
+      : `Device cache MISS: ${deviceId}`
+  );
+
+  const device = await getBridgeDevice(
+    tenantId,
+    deviceId
+  );
+
+  const entry = {
+    ...device,
+    fetchedAt: now,
+  };
+
+  deviceCache.set(key, entry);
+
+  return {
+    host: entry.ip,
+    user: entry.username,
+    pass: entry.password,
+    device: entry,
+  };
+}
 
   function clearDeviceCache(tenantId, deviceId) {
     deviceCache.delete(deviceCacheKey(tenantId, deviceId));
