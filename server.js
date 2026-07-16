@@ -57,7 +57,24 @@ const { createJwtService } = require('./lib/jwt');
 const {
   createTelegramService,
 } = require('./lib/telegram');
+const monitorService = createMonitorService({
+    config: CONFIG,
+    log,
+    sendTelegram: telegramService.sendTelegram,
+});
+const {
+  createDeviceRoutes,
+} = require('./routes/deviceRoutes');
 
+const deviceRoutes = createDeviceRoutes({
+  config: CONFIG,
+  cors: CORS,
+  log,
+  jwtService,
+  routeros,
+  monitorService,
+  resolveDevice: resolveDeviceFromModule,
+});
 function patchRouterOsEmptyReply() {
   try {
     const { Channel } = require('node-routeros/dist/Channel');
@@ -135,294 +152,47 @@ process.on('uncaughtException', (e) => log(`uncaughtException: ${e && e.message}
 process.on('unhandledRejection', (e) => log(`unhandledRejection: ${e && e.message}`));
 
 
-
-function isValidHost(h) {
-  if (typeof h !== 'string' || h.length === 0 || h.length > 253) return false;
-  return /^[a-zA-Z0-9.\-_]+$/.test(h);
-}
-
-// ============================================================
-// RouterOS API connection pool
-// ============================================================
-//
-// One persistent RouterOSAPI client per (host, user). The first request for a
-// (host,user) pair opens the socket; subsequent ones reuse it. Idle
-// connections are dropped after API_IDLE_MS so we don't leak sockets.
-//
-// Per-device credentials are passed in from the frontend (?user=&pass= or
-// JSON body for POST). If they are missing we fall back to the shared env
-// defaults — useful for legacy deployments.
-// ============================================================
-
-
-
-
-
-// Idle reaper
-
-
-/**
- * Run an API command. ctx = { host, user, pass }.
- * words = array like ['/system/resource/print'] or ['/interface/print', '=stats='].
- */
-
-
-// ============================================================
-// Data fetchers (API-based)
-// ============================================================
-
-
-
-
-
-
-
-
-
-
-/**
- * Create a RouterOS backup, fetch its bytes over SFTP, then remove the file
- * from the device so we don't fill up flash. Returns { filename, buffer }.
- */
-
-
-
-
-
-/**
- * Saved scripts that can be invoked from the UI Quick Actions panel.
- * Keys are stable IDs the frontend sends; values are arrays of API words.
- * Edit to taste; keep commands SAFE and IDEMPOTENT.
- */
-
-
-function readJsonBody(req) {
-  return new Promise((resolve, reject) => {
-    let buf = ''; req.on('data', c => { buf += c; if (buf.length > 1e6) req.destroy(); });
-    req.on('end', () => { try { resolve(buf ? JSON.parse(buf) : {}); } catch (e) { reject(e); } });
-    req.on('error', reject);
-  });
-}
-
-async function resolveRequestDevice(req, res) {
-  const body = await readJsonBody(req);
-
-  const tenantId = body.tenant_id;
-  const deviceId = body.device_id;
-
-  if (!tenantId || !deviceId) {
-    res.writeHead(400, {
-      ...CORS,
-      'Content-Type': 'application/json',
-    });
-
-    res.end(
-      JSON.stringify({
-        error: 'tenant_id and device_id are required',
-      })
-    );
-
-    return null;
-  }
-
-  if (tenantId !== CONFIG.TENANT_ID) {
-    res.writeHead(403, {
-      ...CORS,
-      'Content-Type': 'application/json',
-    });
-
-    res.end(
-      JSON.stringify({
-        error: 'tenant_not_allowed',
-      })
-    );
-
-    return null;
-  }
-
-  let ctx;
-
-try {
-  ctx = await resolveDeviceFromModule(
-    tenantId,
-    deviceId
-  );
-} catch (error) {
-  res.writeHead(404, {
-    ...CORS,
-    'Content-Type': 'application/json',
-  });
-
-  res.end(
-    JSON.stringify({
-      error: error.message,
-    })
-  );
-
-  return null;
-}
-  return {
-    body,
-    tenantId,
-    deviceId,
-    ctx,
-  };
-}
-
 // ============================================================
 // HTTP
 // ============================================================
 const server = http.createServer(async (req, res) => {
-  if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, CORS);
+    return res.end();
+  }
 
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  const url = new URL(
+    req.url,
+    `http://${req.headers.host}`
+  );
 
-  if (url.pathname === '/' || url.pathname === '/health') {
-    res.writeHead(200, { ...CORS, 'Content-Type': 'text/plain' });
+  if (
+    url.pathname === '/' ||
+    url.pathname === '/health'
+  ) {
+    res.writeHead(200, {
+      ...CORS,
+      'Content-Type': 'text/plain',
+    });
+
     return res.end(
-  `device-bridge-server ok (pool=${routeros.getPoolSize()})\n`
-);
+      `device-bridge-server ok ` +
+        `(pool=${routeros.getPoolSize()})\n`
+    );
   }
 
-  if (url.pathname.startsWith('/api/device/')) {
-    try {
-      const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-      const user = await jwtService.verifyJwt(token);
-      if (!user || !user.id) { res.writeHead(401, CORS); return res.end('{"error":"unauthorized"}'); }
+  const handled = await deviceRoutes.handle(
+    req,
+    res,
+    url
+  );
 
-      const op = url.pathname.replace('/api/device/', '');
-      let payload;
-      if (op === 'overview' && req.method === 'POST') {
-   const resolved = await resolveRequestDevice(req, res);
-
-  if (!resolved) return;
-
-
-payload = await routeros.getOverview(resolved.ctx);
-}
-      else if (
-  op === 'interfaces' &&
-  req.method === 'POST'
-) {
-  const resolved = await resolveRequestDevice(req, res);
-
-  if (!resolved) return;
-
-  payload = await routeros.getInterfaces(resolved.ctx);
-}
-      else if (op === 'logs' && req.method === 'POST') {
-  const resolved = await resolveRequestDevice(req, res);
-if (!resolved) return;
-
-payload = await routeros.getLogs(
-  resolved.ctx,
-  resolved.body.limit
-);
-}
-else if (
-  op === 'wireless-registrations' &&
-  req.method === 'POST'
-) {
- const resolved = await resolveRequestDevice(req, res);
-if (!resolved) return;
-
-payload = await routeros.getWirelessRegistrations(
-  resolved.ctx
-);
-}
-else if (op === 'traffic' && req.method === 'POST') {
-  const resolved = await resolveRequestDevice(req, res);
-if (!resolved) return;
-
-payload = await routeros.getTraffic(
-  resolved.ctx,
-  resolved.body.iface
-);
-}
-
-      else if (op === 'action' && req.method === 'POST') {
- const resolved = await resolveRequestDevice(req, res);
-if (!resolved) return;
-
-payload = await routeros.runAction(
-  resolved.ctx,
-  resolved.body
-);
-}
-      else if (op === 'backup' && req.method === 'POST') {
-  const resolved = await resolveRequestDevice(req, res);
-if (!resolved) return;
-
-log(
-  `BACKUP ${user.email || user.id} -> device ${resolved.deviceId}`
-);
-
-const { filename, buffer } =
-  await routeros.createAndFetchBackup(resolved.ctx);
-  res.writeHead(200, {
-    ...CORS,
-    'Content-Type': 'application/octet-stream',
-    'Content-Disposition': `attachment; filename="${filename}"`,
-    'X-Backup-Filename': filename,
-    'Access-Control-Expose-Headers':
-      'X-Backup-Filename, Content-Disposition',
-    'Content-Length': buffer.length,
-  });
-
-  return res.end(buffer);
-}
-       else {
-        const host = url.searchParams.get('host');
-        if (op === 'scripts') payload = { scripts: Object.keys(SAVED_SCRIPTS) };
-        else if (op === 'ping') {
-          if (!isValidHost(host)) { res.writeHead(400, CORS); return res.end('{"error":"bad host"}'); }
-          const count = Number(url.searchParams.get('count') || 0);
-          const size = Number(url.searchParams.get('size') || 0);
-          if (count > 0) payload = await monitorService.pingMany(
-  host,
-  count,
-  size || 64
-);
-          else {
-            // Status check: 1 packet; if unreachable, retry up to 4 more
-            // consecutive packets and only report down if all fail.
-            let r = await monitorService.pingOnce(host, size || 16, 1000);
-            if (!r.up) {
-              for (let i = 0; i < 4; i++) {
-                r = await monitorService.pingOnce(host, size || 16, 1000);
-                if (r.up) break;
-              }
-            }
-            payload = r;
-          }
-        }
-        else {
-          if (!isValidHost(host)) { res.writeHead(400, CORS); return res.end('{"error":"bad host"}'); }
-          const ctx = {
-            host,
-            user: url.searchParams.get('user') || undefined,
-            pass: url.searchParams.get('pass') || undefined,
-          };
-          if (op === 'overview') payload = await routeros.getOverview(ctx);
-          else if (op === 'interfaces') payload = await routeros.getInterfaces(ctx);
-          else if (op === 'logs') payload = await routeros.getLogs(ctx, url.searchParams.get('limit'));
-          else if (op === 'traffic') payload = await routeros.getTraffic(ctx, url.searchParams.get('iface'));
-          else if (op === 'wireless-registrations') payload = await routeros.getWirelessRegistrations(ctx);
-          else { res.writeHead(404, CORS); return res.end('{"error":"unknown op"}'); }
-        }
-      }
-
-
-      res.writeHead(200, { ...CORS, 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify(payload));
-    } catch (e) {
-      log(`API error ${url.pathname}: ${e.message}`);
-      res.writeHead(500, { ...CORS, 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ error: e.message }));
-    }
+  if (handled) {
+    return;
   }
 
-  res.writeHead(404, CORS); res.end();
+  res.writeHead(404, CORS);
+  res.end();
 });
 
 // ============================================================
@@ -625,7 +395,7 @@ async function startServer() {
   server.listen(CONFIG.TERMINAL_PORT, async () => {
     log('========================================');
     log(`Device Bridge Server listening on :${CONFIG.TERMINAL_PORT}`);
-    log(`  HTTP : GET  /api/device/{overview|interfaces|logs|traffic}?host=...   (RouterOS API :${CONFIG.MIKROTIK_API_PORT})`);
+    log(`  HTTP : POST /api/device/*`);
     log(`  WS   :      /  (interactive SSH terminal :${CONFIG.MIKROTIK_PORT})`);
     log(`  Password set: ${CONFIG.MIKROTIK_PASSWORD ? 'yes' : 'NO'}`);
     log('  NOTE: enable RouterOS API on each device:  /ip service enable api');
@@ -659,11 +429,7 @@ startServer();
 // - Does NOT write to the database. Does NOT keep ping history.
 // ============================================================================
 
-const monitorService = createMonitorService({
-    config: CONFIG,
-    log,
-    sendTelegram: telegramService.sendTelegram,
-});
+
 let isShuttingDown = false;
 
 async function gracefulShutdown(signal) {
