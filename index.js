@@ -41,22 +41,22 @@ const { WebSocketServer } = require('ws');
 const { Client: SshClient } = require('ssh2');
 const fetch = require('node-fetch');
 const { CONFIG } = require('./config');
-const { createDeviceResolver } = require('./lib/deviceResolver');
+const { createDeviceCache } = require('./services/deviceCache');
 const {
     createRouterOsService,
     SSH_ALGOS,
-} = require('./lib/routeros');
+} = require('./services/routeros');
 const {
   
   createLicenseService,
-} = require('./lib/license');
+} = require('./services/license');
 const {
   createMonitorService,
-} = require('./lib/monitor');
-const { createJwtService } = require('./lib/jwt');
+} = require('./services/monitor');
+const { createJwtService } = require('./services/jwt');
 const {
   createTelegramService,
-} = require('./lib/telegram');
+} = require('./services/telegram');
 
 const {
   createDeviceRoutes,
@@ -127,7 +127,7 @@ const telegramService =
   });
 const {
   resolveDevice,
-} = createDeviceResolver({
+} = createDeviceCache({
   supabaseUrl: CONFIG.SUPABASE_URL,
   bridgeValidationSecret: CONFIG.BRIDGE_VALIDATION_SECRET,
   log,

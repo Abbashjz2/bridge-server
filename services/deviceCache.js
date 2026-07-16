@@ -7,7 +7,7 @@ function deviceCacheKey(tenantId, deviceId) {
   return `${tenantId}:${deviceId}`;
 }
 
-function createDeviceResolver({ supabaseUrl, bridgeValidationSecret, log }) {
+function createDeviceCache({ supabaseUrl, bridgeValidationSecret, log }) {
   async function getBridgeDevice(tenantId, deviceId) {
     const response = await fetch(
       `${supabaseUrl}/functions/v1/get-bridge-device`,
@@ -81,5 +81,5 @@ function createDeviceResolver({ supabaseUrl, bridgeValidationSecret, log }) {
 }
 
 module.exports = {
-  createDeviceResolver,
+  createDeviceCache,
 };
