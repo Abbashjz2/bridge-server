@@ -34,20 +34,20 @@
  */
 
 require('dotenv').config();
+
 const http = require('http');
 const os = require('os');
 const { WebSocketServer } = require('ws');
 const { Client: SshClient } = require('ssh2');
 const fetch = require('node-fetch');
-const { RouterOSAPI } = require('node-routeros');
-const { configDotenv } = require('dotenv');
+const { CONFIG } = require('./config');
 const { createDeviceResolver } = require('./lib/deviceResolver');
 const {
     createRouterOsService,
     SSH_ALGOS,
 } = require('./lib/routeros');
 const {
-  getHardwareFingerprint,
+  
   createLicenseService,
 } = require('./lib/license');
 const {
@@ -93,40 +93,6 @@ function patchRouterOsEmptyReply() {
     log(`node-routeros !empty patch unavailable: ${e && e.message}`);
   }
 }
-
-
-
-const CONFIG = {
-  SUPABASE_URL: process.env.SUPABASE_URL || 'https://vcabaubdlvjzeczfyfgc.supabase.co',
-  SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
-  MIKROTIK_USER: process.env.MIKROTIK_USER || 'admin',
-  MIKROTIK_PASSWORD: process.env.MIKROTIK_PASSWORD || '',
-  MIKROTIK_PORT: parseInt(process.env.MIKROTIK_PORT || '22', 10),
-  MIKROTIK_API_PORT: parseInt(process.env.MIKROTIK_API_PORT || '8728', 10),
-  TERMINAL_PORT: parseInt(process.env.TERMINAL_PORT || '8080', 10),
-  SSH_TIMEOUT_MS: 10000,
-  API_TIMEOUT_MS: 8000,
-  API_IDLE_MS: 5 * 60 * 1000, // close pooled connection after 5 min idle
-  SSH_DEBUG: process.env.SSH_DEBUG === '1',
-  // ----- Background Telegram offline/online alerts (no DB writes, no history) -----
-  TENANT_ID: process.env.TENANT_ID || '97be6038-81c8-4cf9-bd1c-ca4684fe085e',
-  INSTALLATION_ID: process.env.INSTALLATION_ID || '',
-  LICENSE_KEY: process.env.LICENSE_KEY || '',
-  HARDWARE_FINGERPRINT: getHardwareFingerprint(),
-  BRIDGE_VALIDATION_SECRET: process.env.BRIDGE_VALIDATION_SECRET || '',
-  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
-  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
-  MONITOR_INTERVAL_MS: parseInt(process.env.MONITOR_INTERVAL_MS || '60000', 10),
-  MONITOR_RETRY_COUNT: parseInt(process.env.MONITOR_RETRY_COUNT || '4', 10),
-  MONITOR_CONCURRENCY: parseInt(process.env.MONITOR_CONCURRENCY || '10', 10),
-  // Shared secret used to authenticate to the `monitor-devices` edge function,
-  // which returns the device list (it talks to the DB with service role on our
-  // behalf, so we don't need to expose the service role key on this server).
-  MONITOR_SHARED_SECRET: process.env.MONITOR_SHARED_SECRET || '123456@@',
-};
-
-
-
 
 const sshDebug = CONFIG.SSH_DEBUG ? (s) => log(`[ssh2] ${s}`) : undefined;
 
