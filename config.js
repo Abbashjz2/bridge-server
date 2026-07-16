@@ -1,6 +1,6 @@
 const {
   getHardwareFingerprint,
-} = require('./lib/license');
+} = require('./services/license');
 
 const CONFIG = {
   SUPABASE_URL:
