@@ -595,37 +595,9 @@ const heartbeatService = createHeartbeatService({
   getSystemMetrics,
 });
 async function buildMetricsPayload() {
-    log('metrics: starting system metrics');
-
     const systemMetrics = await getSystemMetrics();
 
-    log('metrics: system metrics completed');
-
-    const routerosMetrics = {
-        pooled_connections: routeros.getPoolSize()
-    };
-
-    log('metrics: routeros metrics completed');
-
-    const websocketMetrics = {
-        active_terminals: activeTerminalCount
-    };
-
-    log('metrics: websocket metrics completed');
-
-    const heartbeatMetrics =
-        heartbeatService.getStatus();
-
-    log('metrics: heartbeat metrics completed');
-
-    const serviceMetrics = {
-        command_executor:
-            commandExecutor.getStatus()
-    };
-
-    log('metrics: command executor metrics completed');
-
-    const payload = {
+    return {
         status: 'ok',
 
         bridge: {
@@ -637,18 +609,24 @@ async function buildMetricsPayload() {
 
         runtime: systemMetrics,
 
-        routeros: routerosMetrics,
+        routeros: {
+            pooled_connections:
+                routeros.getPoolSize()
+        },
 
-        websocket: websocketMetrics,
+        websocket: {
+            active_terminals:
+                activeTerminalCount
+        },
 
-        heartbeat: heartbeatMetrics,
+        heartbeat:
+            heartbeatService.getStatus(),
 
-        services: serviceMetrics
+        services: {
+            command_executor:
+                commandExecutor.getStatus()
+        }
     };
-
-    log('metrics: payload completed');
-
-    return payload;
 }
 async function startServer() {
   // Validate before opening the HTTP/WebSocket port.
