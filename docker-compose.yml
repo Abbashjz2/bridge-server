@@ -2,6 +2,7 @@ services:
   noc-server:
     build: .
     container_name: noc-server
+    hostname: bridge-server
     restart: unless-stopped
     ports:
       - "3066:3066"
