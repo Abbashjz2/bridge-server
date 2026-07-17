@@ -175,7 +175,7 @@ function createHeartbeatService({
     }
 
     sending = true;
-    sending = true;
+    lastSentAt = new Date().toISOString();
     const retryCount = Math.max(1, config.BRIDGE_HEARTBEAT_RETRY_COUNT);
 
     try {
