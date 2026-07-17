@@ -61,7 +61,9 @@ const {
 const {
   createDeviceRoutes,
 } = require('./routes/deviceRoutes');
-
+const {
+  createHeartbeatService,
+} = require('./services/heartbeat');
 
 function patchRouterOsEmptyReply() {
   try {
@@ -201,11 +203,14 @@ const server = http.createServer(async (req, res) => {
 // RouterOS 6.4x boxes.
 // ============================================================
 
-
+let activeTerminalCount = 0;
 const wss = new WebSocketServer({ server });
 wss.on('connection', (ws, req) => {
   log(`WS terminal from ${req.socket.remoteAddress}`);
-  let ssh = null, stream = null, authed = false;
+  let ssh = null;
+let stream = null;
+let authed = false;
+let terminalCounted = false;
 
   ws.on('message', async (raw) => {
     let msg; try { msg = JSON.parse(raw.toString()); } catch { return; }
@@ -282,7 +287,10 @@ wss.on('connection', (ws, req) => {
   }
 
   authed = true;
-
+if (!terminalCounted) {
+  activeTerminalCount += 1;
+  terminalCounted = true;
+}
   ssh = new SshClient();
 
   ssh.on('ready', () => {
@@ -375,11 +383,35 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    try { stream && stream.end(); } catch {}
-    try { ssh && ssh.end(); } catch {}
-  });
-});
+  if (terminalCounted) {
+    activeTerminalCount = Math.max(
+      0,
+      activeTerminalCount - 1
+    );
 
+    terminalCounted = false;
+  }
+
+  try {
+    if (stream) stream.end();
+  } catch {}
+
+  try {
+    if (ssh) ssh.end();
+  } catch {}
+});
+});
+const heartbeatService =
+  createHeartbeatService({
+    config: CONFIG,
+    log,
+
+    getRouterOsConnections: () =>
+      routeros.getPoolSize(),
+
+    getActiveTerminals: () =>
+      activeTerminalCount,
+  });
 async function startServer() {
   // Validate before opening the HTTP/WebSocket port.
   try {
@@ -402,6 +434,17 @@ async function startServer() {
     log('========================================');
 
     monitorService.start();
+    try {
+  heartbeatService.start();
+} catch (error) {
+  /*
+   * A heartbeat configuration problem should be visible,
+   * but should not crash router monitoring immediately.
+   */
+  log(
+    `Heartbeat service not started: ${error.message}`
+  );
+}
     licenseService.startPeriodicValidation({
   intervalMs: CONFIG.LICENSE_RECHECK_MS,
 

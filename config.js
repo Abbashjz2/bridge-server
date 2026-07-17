@@ -64,7 +64,29 @@ const CONFIG = {
 
   BRIDGE_VALIDATION_SECRET:
     process.env.BRIDGE_VALIDATION_SECRET || '',
+  BRIDGE_HEARTBEAT_URL:
+  process.env.BRIDGE_HEARTBEAT_URL ||
+  `${process.env.SUPABASE_URL ||
+    'https://vcabaubdlvjzeczfyfgc.supabase.co'
+  }/functions/v1/bridge-heartbeat`,
 
+BRIDGE_HEARTBEAT_INTERVAL_MS: parseInt(
+  process.env.BRIDGE_HEARTBEAT_INTERVAL_MS || '60000',
+  10
+),
+
+BRIDGE_HEARTBEAT_TIMEOUT_MS: parseInt(
+  process.env.BRIDGE_HEARTBEAT_TIMEOUT_MS || '10000',
+  10
+),
+
+BRIDGE_HEARTBEAT_RETRY_COUNT: parseInt(
+  process.env.BRIDGE_HEARTBEAT_RETRY_COUNT || '3',
+  10
+),
+
+BRIDGE_VERSION:
+  process.env.BRIDGE_VERSION || '1.0.0',
   TELEGRAM_BOT_TOKEN:
     process.env.TELEGRAM_BOT_TOKEN || '',
 
