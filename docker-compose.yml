@@ -2,7 +2,7 @@ services:
   noc-server:
     build: .
     container_name: noc-server
-    hostname: bridge-server
+    hostname: bridge_server
     restart: unless-stopped
     ports:
       - "3066:3066"
@@ -12,13 +12,3 @@ services:
     env_file:
       - .env
     command: npm run dev
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflared-noc
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run --token eyJhIjoiMTNjZTc1MDJmYmEzNTcyMzJkN2YxOTg1YWI4MGUwYzIiLCJ0IjoiNGZhNzk3NjItZWMxOS00MTY0LWIzNmUtYjc1MTdhZjFhNzQ3IiwicyI6Ik5UZGxaV05oTVdNdE5HWmlOeTAwWlRJMkxUbGpZamd0TldZME1ESTJPVFJqTUdNeCJ9
-    depends_on:
-      - noc-server
-
-    
