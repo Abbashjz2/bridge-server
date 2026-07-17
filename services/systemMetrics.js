@@ -256,6 +256,7 @@ async function getSystemMetrics() {
     ]);
 
     const cpus = os.cpus();
+    const firstCpu = cpus[0] || {};
     const loadAverage = os.loadavg();
 
     return {
@@ -275,15 +276,19 @@ async function getSystemMetrics() {
         },
 
         cpu: {
-    model: cpuModel,
-    logical_cores: logicalCores,
-    speed_mhz: speedMhz,
-    usage_percent: cpuUsage,
-    temperature_celsius: await getCpuTemperature(),
-    load_average_1m: loadAverage[0],
-    load_average_5m: loadAverage[1],
-    load_average_15m: loadAverage[2],
-},
+            model: firstCpu.model || null,
+            logical_cores: cpus.length,
+            speed_mhz:
+                Number.isFinite(firstCpu.speed)
+                    ? firstCpu.speed
+                    : null,
+            usage_percent: cpuUsagePercent,
+            temperature_celsius:
+                cpuTemperatureCelsius,
+            load_average_1m: loadAverage[0],
+            load_average_5m: loadAverage[1],
+            load_average_15m: loadAverage[2]
+        },
 
         memory: getMemoryMetrics(),
 
