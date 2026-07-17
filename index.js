@@ -528,8 +528,9 @@ async function gracefulShutdown(signal) {
       // Ignore close errors.
     }
   }
-  monitorService.stop();
-  licenseService.stopPeriodicValidation();
+  heartbeatService.stop();
+monitorService.stop();
+licenseService.stopPeriodicValidation();
   // Stop accepting HTTP and WebSocket connections.
   server.close(() => {
     clearTimeout(forceExitTimer);
