@@ -2,13 +2,29 @@ services:
   noc-server:
     build: .
     container_name: noc-server
-    hostname: bridge_server
+    hostname: bridge-server
     restart: unless-stopped
+
     ports:
       - "3066:3066"
+
     volumes:
       - .:/app
       - /app/node_modules
+
+      # Raspberry Pi CPU temperature
+      - /sys/class/thermal:/host/sys/class/thermal:ro
+
+      # Raspberry Pi model
+      - /proc/device-tree/model:/host/proc/device-tree/model:ro
+
+      # Host operating-system information
+      - /etc/os-release:/host/etc/os-release:ro
+
+      # Host root filesystem for disk metrics
+      - /:/host/root:ro
+
     env_file:
       - .env
+
     command: npm run dev

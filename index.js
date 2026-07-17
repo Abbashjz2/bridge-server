@@ -65,6 +65,9 @@ const {
 const {
   createHeartbeatService,
 } = require('./services/heartbeat');
+const {
+    getSystemMetrics
+} = require('./services/systemMetrics');
 
 function patchRouterOsEmptyReply() {
   try {
@@ -279,11 +282,11 @@ const server = http.createServer(async (req, res) => {
       error: 'unauthorized',
     });
   }
-
+const metrics = await buildMetricsPayload();
   return sendJson(
     res,
     200,
-    buildMetricsPayload()
+    metrics
   );
 }
   const handled = await deviceRoutes.handle(
@@ -515,80 +518,36 @@ const heartbeatService = createHeartbeatService({
       activeTerminalCount,
   });
   heartbeatService.getStatus()
-  function buildMetricsPayload() {
-  const loadAverage = os.loadavg();
+async function buildMetricsPayload() {
+    const systemMetrics = await getSystemMetrics();
 
-  return {
-    status:
-      isShuttingDown
-        ? 'shutting_down'
-        : 'ok',
+    return {
+        status: 'ok',
 
-    timestamp: new Date().toISOString(),
+        bridge: {
+            version: CONFIG.BRIDGE_VERSION,
+            tenant_id: CONFIG.TENANT_ID,
+            installation_id: CONFIG.INSTALLATION_ID
+        },
 
-    bridge: {
-      version: CONFIG.BRIDGE_VERSION,
-      installation_id:
-        CONFIG.INSTALLATION_ID,
-      tenant_id: CONFIG.TENANT_ID,
-      hostname: os.hostname(),
-      platform: process.platform,
-      architecture: process.arch,
-      node_version: process.version,
-    },
+        runtime: systemMetrics,
 
-    uptime: {
-      system_seconds: Math.floor(
-        os.uptime()
-      ),
+        routeros: {
+            pooled_connections: routeros.getPoolSize()
+        },
 
-      process_seconds: Math.floor(
-        process.uptime()
-      ),
-    },
+        websocket: {
+            active_terminals: activeTerminalCount
+        },
 
-    memory: getMemoryMetrics(),
+        heartbeat: heartbeatService.getStatus(),
 
-    cpu: {
-      cores: os.cpus().length,
-      load_1m: Number(
-        loadAverage[0].toFixed(2)
-      ),
-      load_5m: Number(
-        loadAverage[1].toFixed(2)
-      ),
-      load_15m: Number(
-        loadAverage[2].toFixed(2)
-      ),
-    },
-
-    routeros: {
-      pooled_connections:
-        routeros.getPoolSize(),
-    },
-
-    terminals: {
-      active_sessions:
-        activeTerminalCount,
-      websocket_clients:
-        wss.clients.size,
-    },
-
-    heartbeat:
-      heartbeatService.getStatus(),
-
-    services: {
-      http: true,
-      websocket: true,
-      routeros_api: true,
-      monitoring: true,
-      heartbeat:
-        heartbeatService
-          .getStatus()
-          .enabled,
-      license_periodic_validation: true,
-    },
-  };
+        services: {
+            license: 'running',
+            heartbeat: 'running',
+            monitor: 'running'
+        }
+    };
 }
 async function startServer() {
   // Validate before opening the HTTP/WebSocket port.
