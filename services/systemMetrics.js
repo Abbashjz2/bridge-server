@@ -53,24 +53,31 @@ async function readTextFile(path) {
 }
 
 async function getCpuTemperature() {
-    const rawValue = await readTextFile(CPU_TEMPERATURE_PATH);
+    const paths = [
+        '/host/sys/class/thermal/thermal_zone0/temp',
+        '/host/sys/devices/virtual/thermal/thermal_zone0/temp',
+    ];
 
-    if (!rawValue) {
-        return null;
+    for (const temperaturePath of paths) {
+        try {
+            const raw = await fs.readFile(
+                temperaturePath,
+                'utf8'
+            );
+
+            const millidegrees = Number(raw.trim());
+
+            if (Number.isFinite(millidegrees)) {
+                return Number(
+                    (millidegrees / 1000).toFixed(2)
+                );
+            }
+        } catch {
+            // Try the next path.
+        }
     }
 
-    const temperature = Number(rawValue);
-
-    if (!Number.isFinite(temperature)) {
-        return null;
-    }
-
-    // Raspberry Pi normally reports millidegrees Celsius.
-    return round(
-        temperature > 1000
-            ? temperature / 1000
-            : temperature
-    );
+    return null;
 }
 
 function getCpuSnapshot() {
@@ -268,16 +275,15 @@ async function getSystemMetrics() {
         },
 
         cpu: {
-            model: cpus[0]?.model?.trim() || null,
-            logical_cores: cpus.length,
-            speed_mhz: cpus[0]?.speed || null,
-            usage_percent: cpuUsagePercent,
-            temperature_celsius:
-                cpuTemperatureCelsius,
-            load_average_1m: round(loadAverage[0]),
-            load_average_5m: round(loadAverage[1]),
-            load_average_15m: round(loadAverage[2])
-        },
+    model: cpuModel,
+    logical_cores: logicalCores,
+    speed_mhz: speedMhz,
+    usage_percent: cpuUsage,
+    temperature_celsius: await getCpuTemperature(),
+    load_average_1m: loadAverage[0],
+    load_average_5m: loadAverage[1],
+    load_average_15m: loadAverage[2],
+},
 
         memory: getMemoryMetrics(),
 
