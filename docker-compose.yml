@@ -13,7 +13,7 @@ services:
       - /app/node_modules
 
       # Raspberry Pi CPU temperature
-      - /sys/class/thermal:/host/sys/class/thermal:ro
+      - /sys:/host/sys:ro
 
       # Raspberry Pi model
       - /proc/device-tree/model:/host/proc/device-tree/model:ro
