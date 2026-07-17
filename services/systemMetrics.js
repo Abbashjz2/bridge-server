@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 
 const HOST_ROOT_PATH = '/host/root';
 const CPU_TEMPERATURE_PATH =
-    '/host/sys/class/thermal/thermal_zone0/temp';
+    '/sys/class/thermal/thermal_zone0/temp';
 const PI_MODEL_PATH =
     '/host/proc/device-tree/model';
 const OS_RELEASE_PATH =
