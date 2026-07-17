@@ -25,7 +25,9 @@ function createCommandExecutor({
       Number(systemMetrics?.cpu?.usage_percent) || 0;
 
     const cpuTemperature =
-      Number(systemMetrics?.cpu?.temperature_c) || 0;
+  Number(
+    systemMetrics?.cpu?.temperature_celsius
+  ) || 0;
 
     const memoryUsage =
       Number(systemMetrics?.memory?.used_percent) || 0;
