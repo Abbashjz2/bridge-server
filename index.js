@@ -68,6 +68,9 @@ const {
 const {
     getSystemMetrics
 } = require('./services/systemMetrics');
+const {
+  createCommandExecutor,
+} = require('./services/commandExecutor');
 
 function patchRouterOsEmptyReply() {
   try {
@@ -288,6 +291,70 @@ const metrics = await buildMetricsPayload();
     200,
     metrics
   );
+}
+if (url.pathname === '/commands') {
+
+    if (req.method !== 'POST') {
+        return sendJson(res, 405, {
+            ok: false,
+            error: 'method_not_allowed',
+        });
+    }
+
+    if (!CONFIG.MONITOR_SHARED_SECRET) {
+        return sendJson(res, 503, {
+            ok: false,
+            error: 'commands_not_configured',
+        });
+    }
+
+    const suppliedSecret =
+        req.headers['x-monitor-secret'];
+
+    if (
+        !secureCompare(
+            suppliedSecret,
+            CONFIG.MONITOR_SHARED_SECRET
+        )
+    ) {
+        return sendJson(res, 401, {
+            ok: false,
+            error: 'unauthorized',
+        });
+    }
+
+    let body = '';
+
+    req.on('data', chunk => {
+        body += chunk;
+    });
+
+    req.on('end', async () => {
+
+        try {
+
+            const payload = JSON.parse(body || '{}');
+
+            const result =
+                await commandExecutor.executeCommand(
+                    payload.command,
+                    payload.payload || {}
+                );
+
+            return sendJson(res, 200, result);
+
+        } catch (error) {
+
+            return sendJson(res, 400, {
+                ok: false,
+                error: error.message,
+            });
+
+        }
+
+    });
+
+    return;
 }
   const handled = await deviceRoutes.handle(
     req,
@@ -517,7 +584,16 @@ const heartbeatService = createHeartbeatService({
     getActiveTerminals: () =>
       activeTerminalCount,
   });
-  heartbeatService.getStatus()
+  
+  
+  const commandExecutor = createCommandExecutor({
+  log,
+  licenseService,
+  monitorService,
+  heartbeatService,
+  routeros,
+  getSystemMetrics,
+});
 async function buildMetricsPayload() {
     const systemMetrics = await getSystemMetrics();
 
@@ -543,9 +619,7 @@ async function buildMetricsPayload() {
         heartbeat: heartbeatService.getStatus(),
 
         services: {
-            license: 'running',
-            heartbeat: 'running',
-            monitor: 'running'
+            command_executor: commandExecutor.getStatus(),
         }
     };
 }
