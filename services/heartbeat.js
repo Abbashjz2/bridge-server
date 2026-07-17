@@ -1,5 +1,5 @@
-const os = require('os');
-const fetch = require('node-fetch');
+const os = require("os");
+const fetch = require("node-fetch");
 
 function sleep(ms) {
   return new Promise((resolve) => {
@@ -15,11 +15,7 @@ function getReportedLocalIp() {
     if (!Array.isArray(addresses)) continue;
 
     for (const address of addresses) {
-      if (
-        address &&
-        address.family === 'IPv4' &&
-        !address.internal
-      ) {
+      if (address && address.family === "IPv4" && !address.internal) {
         return address.address;
       }
     }
@@ -29,11 +25,7 @@ function getReportedLocalIp() {
 }
 
 function getOsInfo() {
-  return [
-    os.type(),
-    os.release(),
-    os.arch(),
-  ].join(' ');
+  return [os.type(), os.release(), os.arch()].join(" ");
 }
 
 function createHeartbeatService({
@@ -45,49 +37,49 @@ function createHeartbeatService({
   let intervalTimer = null;
   let sending = false;
   let stopped = true;
-
+  let lastSentAt = null;
+  let lastSuccessAt = null;
+  let lastErrorAt = null;
+  let lastError = null;
+  let consecutiveFailures = 0;
   function validateConfiguration() {
     const missing = [];
 
     if (!config.BRIDGE_HEARTBEAT_URL) {
-      missing.push('BRIDGE_HEARTBEAT_URL');
+      missing.push("BRIDGE_HEARTBEAT_URL");
     }
 
     if (!config.BRIDGE_VALIDATION_SECRET) {
-      missing.push('BRIDGE_VALIDATION_SECRET');
+      missing.push("BRIDGE_VALIDATION_SECRET");
     }
 
     if (!config.TENANT_ID) {
-      missing.push('TENANT_ID');
+      missing.push("TENANT_ID");
     }
 
     if (!config.INSTALLATION_ID) {
-      missing.push('INSTALLATION_ID');
+      missing.push("INSTALLATION_ID");
     }
 
     if (!config.HARDWARE_FINGERPRINT) {
-      missing.push('HARDWARE_FINGERPRINT');
+      missing.push("HARDWARE_FINGERPRINT");
     }
 
     if (missing.length > 0) {
-      throw new Error(
-        `Missing heartbeat configuration: ${missing.join(', ')}`
-      );
+      throw new Error(`Missing heartbeat configuration: ${missing.join(", ")}`);
     }
   }
 
   function buildPayload() {
     const totalMemoryBytes = os.totalmem();
-    const usedMemoryBytes =
-      totalMemoryBytes - os.freemem();
+    const usedMemoryBytes = totalMemoryBytes - os.freemem();
 
     const reportedIp = getReportedLocalIp();
 
     return {
       tenant_id: config.TENANT_ID,
       installation_id: config.INSTALLATION_ID,
-      hardware_fingerprint:
-        config.HARDWARE_FINGERPRINT,
+      hardware_fingerprint: config.HARDWARE_FINGERPRINT,
 
       hostname: os.hostname(),
       bridge_version: config.BRIDGE_VERSION,
@@ -95,31 +87,23 @@ function createHeartbeatService({
 
       uptime_seconds: Math.floor(os.uptime()),
 
-      memory_used_mb: Math.round(
-        usedMemoryBytes / 1024 / 1024
-      ),
+      memory_used_mb: Math.round(usedMemoryBytes / 1024 / 1024),
 
-      memory_total_mb: Math.round(
-        totalMemoryBytes / 1024 / 1024
-      ),
+      memory_total_mb: Math.round(totalMemoryBytes / 1024 / 1024),
 
       routeros_connections: Math.max(
         0,
-        Number(getRouterOsConnections?.() || 0)
+        Number(getRouterOsConnections?.() || 0),
       ),
 
-      active_terminals: Math.max(
-        0,
-        Number(getActiveTerminals?.() || 0)
-      ),
+      active_terminals: Math.max(0, Number(getActiveTerminals?.() || 0)),
 
       /*
        * The Edge Function verifies the active license before
        * accepting this heartbeat.
        */
       license_valid: true,
-      last_license_check_at:
-        new Date().toISOString(),
+      last_license_check_at: new Date().toISOString(),
 
       /*
        * The Edge Function stores the observed public address
@@ -133,9 +117,7 @@ function createHeartbeatService({
         node_version: process.version,
         platform: process.platform,
         architecture: process.arch,
-        process_uptime_seconds: Math.floor(
-          process.uptime()
-        ),
+        process_uptime_seconds: Math.floor(process.uptime()),
       },
     };
   }
@@ -150,21 +132,17 @@ function createHeartbeatService({
     timeout.unref?.();
 
     try {
-      const response = await fetch(
-        config.BRIDGE_HEARTBEAT_URL,
-        {
-          method: 'POST',
+      const response = await fetch(config.BRIDGE_HEARTBEAT_URL, {
+        method: "POST",
 
-          headers: {
-            'Content-Type': 'application/json',
-            'x-bridge-secret':
-              config.BRIDGE_VALIDATION_SECRET,
-          },
+        headers: {
+          "Content-Type": "application/json",
+          "x-bridge-secret": config.BRIDGE_VALIDATION_SECRET,
+        },
 
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        }
-      );
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
 
       let body = null;
 
@@ -175,13 +153,9 @@ function createHeartbeatService({
       }
 
       if (!response.ok) {
-        const reason =
-          body?.reason ||
-          `http_${response.status}`;
+        const reason = body?.reason || `http_${response.status}`;
 
-        const error = new Error(
-          `Heartbeat rejected: ${reason}`
-        );
+        const error = new Error(`Heartbeat rejected: ${reason}`);
 
         error.status = response.status;
         error.reason = reason;
@@ -201,34 +175,29 @@ function createHeartbeatService({
     }
 
     sending = true;
-
-    const retryCount = Math.max(
-      1,
-      config.BRIDGE_HEARTBEAT_RETRY_COUNT
-    );
+    sending = true;
+    const retryCount = Math.max(1, config.BRIDGE_HEARTBEAT_RETRY_COUNT);
 
     try {
       const payload = buildPayload();
 
-      for (
-        let attempt = 1;
-        attempt <= retryCount;
-        attempt += 1
-      ) {
+      for (let attempt = 1; attempt <= retryCount; attempt += 1) {
         try {
-          const result = await postHeartbeat(
-            payload
-          );
+          const result = await postHeartbeat(payload);
+
+          lastSuccessAt = new Date().toISOString();
+          lastErrorAt = null;
+          lastError = null;
+          consecutiveFailures = 0;
 
           log(
             `Bridge heartbeat accepted ` +
-            `(installation=${config.INSTALLATION_ID})`
+              `(installation=${config.INSTALLATION_ID})`,
           );
 
           return result;
         } catch (error) {
-          const isFinalAttempt =
-            attempt === retryCount;
+          const isFinalAttempt = attempt === retryCount;
 
           /*
            * Authentication and license failures are not temporary.
@@ -239,16 +208,16 @@ function createHeartbeatService({
             error.status === 401 ||
             error.status === 403;
 
+          lastErrorAt = new Date().toISOString();
+          lastError = error.message;
+          consecutiveFailures += 1;
           log(
             `Bridge heartbeat failed ` +
-            `(attempt=${attempt}/${retryCount}, ` +
-            `reason=${error.message})`
+              `(attempt=${attempt}/${retryCount}, ` +
+              `reason=${error.message})`,
           );
 
-          if (
-            isFinalAttempt ||
-            shouldStopRetrying
-          ) {
+          if (isFinalAttempt || shouldStopRetrying) {
             return null;
           }
 
@@ -277,7 +246,7 @@ function createHeartbeatService({
 
     log(
       `Bridge heartbeat service started ` +
-      `(interval=${config.BRIDGE_HEARTBEAT_INTERVAL_MS}ms)`
+        `(interval=${config.BRIDGE_HEARTBEAT_INTERVAL_MS}ms)`,
     );
 
     /*
@@ -301,13 +270,29 @@ function createHeartbeatService({
       intervalTimer = null;
     }
 
-    log('Bridge heartbeat service stopped');
+    log("Bridge heartbeat service stopped");
   }
-
+  function getStatus() {
+  return {
+    enabled: !stopped,
+    sending,
+    interval_ms:
+      config.BRIDGE_HEARTBEAT_INTERVAL_MS,
+    timeout_ms:
+      config.BRIDGE_HEARTBEAT_TIMEOUT_MS,
+    last_sent_at: lastSentAt,
+    last_success_at: lastSuccessAt,
+    last_error_at: lastErrorAt,
+    last_error: lastError,
+    consecutive_failures:
+      consecutiveFailures,
+  };
+}
   return {
     start,
     stop,
     sendHeartbeat,
+    getStatus
   };
 }
 

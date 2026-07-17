@@ -37,6 +37,7 @@ require('dotenv').config();
 
 const http = require('http');
 const os = require('os');
+const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { Client: SshClient } = require('ssh2');
 const fetch = require('node-fetch');
@@ -110,6 +111,68 @@ const CORS = {
 };
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
+function secureCompare(valueA, valueB) {
+  const first = Buffer.from(
+    String(valueA || ''),
+    'utf8'
+  );
+
+  const second = Buffer.from(
+    String(valueB || ''),
+    'utf8'
+  );
+
+  if (
+    first.length === 0 ||
+    second.length === 0 ||
+    first.length !== second.length
+  ) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(first, second);
+}
+function sendJson(res, statusCode, data) {
+  const body = JSON.stringify(data);
+
+  res.writeHead(statusCode, {
+    ...CORS,
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-store',
+  });
+
+  res.end(body);
+}
+function getMemoryMetrics() {
+  const totalBytes = os.totalmem();
+  const freeBytes = os.freemem();
+  const usedBytes = totalBytes - freeBytes;
+
+  return {
+    used_mb: Math.round(
+      usedBytes / 1024 / 1024
+    ),
+
+    free_mb: Math.round(
+      freeBytes / 1024 / 1024
+    ),
+
+    total_mb: Math.round(
+      totalBytes / 1024 / 1024
+    ),
+
+    used_percent:
+      totalBytes > 0
+        ? Number(
+            (
+              (usedBytes / totalBytes) *
+              100
+            ).toFixed(1)
+          )
+        : 0,
+  };
+}
 const licenseService = createLicenseService({
   config: CONFIG,
   log,
@@ -182,7 +245,47 @@ const server = http.createServer(async (req, res) => {
         `(pool=${routeros.getPoolSize()})\n`
     );
   }
+  if (url.pathname === '/metrics') {
+  if (req.method !== 'GET') {
+    return sendJson(res, 405, {
+      ok: false,
+      error: 'method_not_allowed',
+    });
+  }
 
+  if (!CONFIG.MONITOR_SHARED_SECRET) {
+    log(
+      'Metrics request rejected: ' +
+      'MONITOR_SHARED_SECRET is not configured'
+    );
+
+    return sendJson(res, 503, {
+      ok: false,
+      error: 'metrics_not_configured',
+    });
+  }
+
+  const suppliedSecret =
+    req.headers['x-monitor-secret'];
+
+  if (
+    !secureCompare(
+      suppliedSecret,
+      CONFIG.MONITOR_SHARED_SECRET
+    )
+  ) {
+    return sendJson(res, 401, {
+      ok: false,
+      error: 'unauthorized',
+    });
+  }
+
+  return sendJson(
+    res,
+    200,
+    buildMetricsPayload()
+  );
+}
   const handled = await deviceRoutes.handle(
     req,
     res,
@@ -401,8 +504,7 @@ if (!terminalCounted) {
   } catch {}
 });
 });
-const heartbeatService =
-  createHeartbeatService({
+const heartbeatService = createHeartbeatService({
     config: CONFIG,
     log,
 
@@ -412,6 +514,82 @@ const heartbeatService =
     getActiveTerminals: () =>
       activeTerminalCount,
   });
+  heartbeatService.getStatus()
+  function buildMetricsPayload() {
+  const loadAverage = os.loadavg();
+
+  return {
+    status:
+      isShuttingDown
+        ? 'shutting_down'
+        : 'ok',
+
+    timestamp: new Date().toISOString(),
+
+    bridge: {
+      version: CONFIG.BRIDGE_VERSION,
+      installation_id:
+        CONFIG.INSTALLATION_ID,
+      tenant_id: CONFIG.TENANT_ID,
+      hostname: os.hostname(),
+      platform: process.platform,
+      architecture: process.arch,
+      node_version: process.version,
+    },
+
+    uptime: {
+      system_seconds: Math.floor(
+        os.uptime()
+      ),
+
+      process_seconds: Math.floor(
+        process.uptime()
+      ),
+    },
+
+    memory: getMemoryMetrics(),
+
+    cpu: {
+      cores: os.cpus().length,
+      load_1m: Number(
+        loadAverage[0].toFixed(2)
+      ),
+      load_5m: Number(
+        loadAverage[1].toFixed(2)
+      ),
+      load_15m: Number(
+        loadAverage[2].toFixed(2)
+      ),
+    },
+
+    routeros: {
+      pooled_connections:
+        routeros.getPoolSize(),
+    },
+
+    terminals: {
+      active_sessions:
+        activeTerminalCount,
+      websocket_clients:
+        wss.clients.size,
+    },
+
+    heartbeat:
+      heartbeatService.getStatus(),
+
+    services: {
+      http: true,
+      websocket: true,
+      routeros_api: true,
+      monitoring: true,
+      heartbeat:
+        heartbeatService
+          .getStatus()
+          .enabled,
+      license_periodic_validation: true,
+    },
+  };
+}
 async function startServer() {
   // Validate before opening the HTTP/WebSocket port.
   try {
