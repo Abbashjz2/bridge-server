@@ -805,16 +805,35 @@ async function gracefulShutdown(signal) {
   const forceExitTimer = setTimeout(() => {
     log('Graceful shutdown timeout; forcing exit');
     process.exit(1);
-  }, 5000);
+  }, 30000);
 
   forceExitTimer.unref?.();
 
   try {
-    await telegramService.sendTelegram(shutdownMessage);
+    await telegramService.sendTelegram(
+      shutdownMessage
+    );
+
     log('Shutdown Telegram notification sent');
   } catch (e) {
-    log(`Shutdown Telegram notification failed: ${e.message}`);
+    log(
+      `Shutdown Telegram notification failed: ${e.message}`
+    );
   }
+
+  try {
+    await remoteCommandService.stop();
+    log('Remote Command Service stopped.');
+  } catch (error) {
+    log(
+      `Failed to stop Remote Command Service: ${error.message}`
+    );
+  }
+
+  // Stop background services.
+  heartbeatService.stop();
+  monitorService.stop();
+  licenseService.stopPeriodicValidation();
 
   // Close RouterOS pooled connections.
   routeros.closeAll();
@@ -822,14 +841,15 @@ async function gracefulShutdown(signal) {
   // Close WebSocket clients.
   for (const client of wss.clients) {
     try {
-      client.close(1001, 'Server shutting down');
+      client.close(
+        1001,
+        'Server shutting down'
+      );
     } catch {
       // Ignore close errors.
     }
   }
-  heartbeatService.stop();
-monitorService.stop();
-licenseService.stopPeriodicValidation();
+
   // Stop accepting HTTP and WebSocket connections.
   server.close(() => {
     clearTimeout(forceExitTimer);
