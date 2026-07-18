@@ -712,7 +712,16 @@ async function startServer() {
     process.exit(1);
     return;
   }
-
+  try {
+  await remoteCommandService.start();
+  log('Remote Command Service initialized.');
+} catch (error) {
+  log(
+    `Failed to initialize Remote Command Service: ${error.message}`
+  );
+  process.exit(1);
+  return;
+}
   // The license is valid, so the server may now start.
   server.listen(CONFIG.TERMINAL_PORT, async () => {
     log('========================================');
