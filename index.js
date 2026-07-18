@@ -71,6 +71,9 @@ const {
 const {
   createCommandExecutor,
 } = require('./services/commandExecutor');
+const {
+  RemoteCommandService,
+} = require('./services/remoteCommands/RemoteCommandService');
 
 function patchRouterOsEmptyReply() {
   try {
@@ -594,6 +597,75 @@ const heartbeatService = createHeartbeatService({
   routeros,
   getSystemMetrics,
 });
+async function executeRemoteCommand(
+  command,
+  payload
+) {
+  const execution =
+    await commandExecutor.executeCommand(
+      command,
+      payload
+    );
+
+  return {
+    exit_code: 0,
+
+    result_json: {
+      command_id: execution.command_id,
+      command: execution.command,
+      result: execution.result,
+    },
+  };
+}
+
+const remoteCommandHandlers = {
+  run_diagnostics: (payload) =>
+    executeRemoteCommand(
+      'run_diagnostics',
+      payload
+    ),
+
+  revalidate_license: (payload) =>
+    executeRemoteCommand(
+      'revalidate_license',
+      payload
+    ),
+
+  restart_monitor: (payload) =>
+    executeRemoteCommand(
+      'restart_monitor',
+      payload
+    ),
+
+  restart_heartbeat: (payload) =>
+    executeRemoteCommand(
+      'restart_heartbeat',
+      payload
+    ),
+
+  reset_router_pool: (payload) =>
+    executeRemoteCommand(
+      'reset_router_pool',
+      payload
+    ),
+};
+const remoteCommandService =
+  new RemoteCommandService({
+    config: CONFIG,
+
+    handlers: remoteCommandHandlers,
+
+    logger(level, event, data) {
+      const details =
+        data === undefined
+          ? ''
+          : ` ${JSON.stringify(data)}`;
+
+      log(
+        `[remote-command:${level}:${event}]${details}`
+      );
+    },
+  });
 async function buildMetricsPayload() {
     const systemMetrics = await getSystemMetrics();
 
@@ -625,7 +697,9 @@ async function buildMetricsPayload() {
         services: {
             command_executor:
                 commandExecutor.getStatus()
-        }
+        },
+        remote_commands:
+  remoteCommandService.getMetrics()
     };
 }
 async function startServer() {

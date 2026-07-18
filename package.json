@@ -2,7 +2,7 @@
   "name": "billflow-device-services",
   "version": "1.0.0",
   "description": "BillFlow device services: monitor (ICMP ping), terminal (SSH WebSocket), and bridge (terminal + REST dashboard API)",
-  "main": "device-bridge-server.js",
+  "main": "index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",

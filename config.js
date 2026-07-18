@@ -116,6 +116,59 @@ BRIDGE_VERSION:
     String(6 * 60 * 60 * 1000),
   10
 ),
+  SUPABASE_FUNCTIONS_URL:
+    process.env.SUPABASE_FUNCTIONS_URL ||
+    `${
+      process.env.SUPABASE_URL ||
+      'https://vcabaubdlvjzeczfyfgc.supabase.co'
+    }/functions/v1`,
+
+  BRIDGE_API_VERSION: parseInt(
+    process.env.BRIDGE_API_VERSION || '1',
+    10
+  ),
+
+  COMMAND_POLL_ENABLED:
+    process.env.COMMAND_POLL_ENABLED === 'true',
+
+  COMMAND_POLL_INTERVAL_MS: parseInt(
+    process.env.COMMAND_POLL_INTERVAL_MS || '5000',
+    10
+  ),
+
+  COMMAND_AUTH_RETRY_MIN_MS: parseInt(
+    process.env.COMMAND_AUTH_RETRY_MIN_MS || '5000',
+    10
+  ),
+
+  COMMAND_AUTH_RETRY_MAX_MS: parseInt(
+    process.env.COMMAND_AUTH_RETRY_MAX_MS || '300000',
+    10
+  ),
+
+  COMMAND_REPORT_RETRY_MIN_MS: parseInt(
+    process.env.COMMAND_REPORT_RETRY_MIN_MS || '2000',
+    10
+  ),
+
+  COMMAND_REPORT_RETRY_MAX_MS: parseInt(
+    process.env.COMMAND_REPORT_RETRY_MAX_MS || '300000',
+    10
+  ),
+
+  JWT_REFRESH_SAFETY_MS: parseInt(
+    process.env.JWT_REFRESH_SAFETY_MS || '60000',
+    10
+  ),
+
+  SHUTDOWN_GRACE_MS: parseInt(
+    process.env.SHUTDOWN_GRACE_MS || '20000',
+    10
+  ),
+
+  PENDING_REPORTS_PATH:
+    process.env.PENDING_REPORTS_PATH ||
+    './data/bridge/pending-reports.json',
 };
 
 module.exports = {
