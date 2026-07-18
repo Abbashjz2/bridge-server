@@ -402,7 +402,7 @@ class RemoteCommandService {
 
   await this.store.markAttempt(record.command_id);
   await sleep(jitter(wait));
-  continue;
+  return;
 }
 
     if (res.status === 409) {
