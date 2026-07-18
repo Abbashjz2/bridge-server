@@ -384,11 +384,26 @@ class RemoteCommandService {
 
     // 429: respect Retry-After
     if (res.status === 429) {
-      const ra = Number(res.headers.get?.('retry-after') || res.headers?.['retry-after'] || 0);
-      const wait = ra > 0 ? ra * 1000 : this.cfg.COMMAND_POLL_INTERVAL_MS * 4;
-      this.logger('warn', 'poll', { msg: 'rate limited', retry_after_ms: wait });
-      return this._schedulePoll(jitter(wait));
-    }
+  const retryAfter = Number(
+    res.headers.get?.('retry-after') ||
+    res.headers?.['retry-after'] ||
+    0
+  );
+
+  const wait = retryAfter > 0
+    ? retryAfter * 1000
+    : Math.min(max, min * Math.pow(2, attempt - 1));
+
+  this.logger('warn', 'report', {
+    msg: 'rate limited',
+    command_id: record.command_id,
+    retry_after_ms: wait,
+  });
+
+  await this.store.markAttempt(record.command_id);
+  await sleep(jitter(wait));
+  continue;
+}
 
     if (res.status === 409) {
       // Should not happen for a poll, but log safely.
@@ -622,14 +637,34 @@ class RemoteCommandService {
           await this.store.remove(record.command_id);
           return;
         }
-        if (res.status === 409) {
-          const parsed = await this._readBodySafely(res);
-          // "already terminal" with matching hash = success; the SQL guard
-          // already treats this idempotently, but be defensive.
-          this.logger('info', 'report', { msg: 'conflict; treating as delivered', command_id: record.command_id, body: parsed.slice(0, 200) });
-          await this.store.remove(record.command_id);
-          return;
-        }
+if (res.status === 409) {
+  const parsed = await this._readBodySafely(res);
+
+  this.logger('warn', 'report', {
+    msg: 'terminal report permanently rejected',
+    command_id: record.command_id,
+    status: record.status,
+    response: parsed.slice(0, 500),
+  });
+
+  // A stale/expired lease or terminal command cannot be repaired by retrying
+  // this same report, so remove it from the pending queue.
+  await this.store.remove(record.command_id);
+  return;
+}
+if (res.status === 400 || res.status === 403 || res.status === 413) {
+  const parsed = await this._readBodySafely(res);
+
+  this.logger('error', 'report', {
+    msg: 'terminal report permanently rejected',
+    command_id: record.command_id,
+    status: res.status,
+    response: parsed.slice(0, 500),
+  });
+
+  await this.store.remove(record.command_id);
+  return;
+}
         if (res.status === 401) {
           this._jwt = null; this._jwtExpMs = 0;
           continue;
