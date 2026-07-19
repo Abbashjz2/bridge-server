@@ -241,6 +241,31 @@ class RemoteCommandService {
 
   // -------------------------- auth --------------------------
 
+  /**
+ * Returns a valid Bridge JWT for other trusted local services.
+ *
+ * The token remains in memory only. It must never be logged,
+ * written to disk, or exposed through an HTTP endpoint.
+ */
+async getBridgeToken() {
+  if (this._stopping) {
+    throw new Error(
+      'Remote command service is stopping'
+    );
+  }
+
+  await this._ensureAuth();
+
+  if (!this._isJwtLive() || !this._jwt) {
+    throw new Error(
+      'Bridge authentication token unavailable'
+    );
+  }
+
+  return this._jwt;
+}
+
+
   _isJwtLive() {
     return !!(this._jwt && this._jwtExpMs - this.cfg.JWT_REFRESH_SAFETY_MS > Date.now());
   }

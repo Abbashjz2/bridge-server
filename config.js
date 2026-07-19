@@ -169,6 +169,26 @@ BRIDGE_VERSION:
   PENDING_REPORTS_PATH:
     process.env.PENDING_REPORTS_PATH ||
     './data/bridge/pending-reports.json',
+
+    HEALTH_REPORT_ENABLED:
+  process.env.HEALTH_REPORT_ENABLED === 'true',
+
+HEALTH_REPORT_INTERVAL_MS: parseInt(
+  process.env.HEALTH_REPORT_INTERVAL_MS || '15000',
+  10
+),
+
+HEALTH_REPORT_TIMEOUT_MS: parseInt(
+  process.env.HEALTH_REPORT_TIMEOUT_MS || '10000',
+  10
+),
+
+BRIDGE_HEALTH_REPORT_URL:
+  process.env.BRIDGE_HEALTH_REPORT_URL ||
+  `${
+    process.env.SUPABASE_URL ||
+    'https://vcabaubdlvjzeczfyfgc.supabase.co'
+  }/functions/v1/report-bridge-health`,
 };
 
 module.exports = {

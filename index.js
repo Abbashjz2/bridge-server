@@ -69,6 +69,9 @@ const {
     getSystemMetrics
 } = require('./services/systemMetrics');
 const {
+  createHealthReporterService,
+} = require('./services/healthReporter');
+const {
   createCommandExecutor,
 } = require('./services/commandExecutor');
 const {
@@ -666,6 +669,20 @@ const remoteCommandService =
       );
     },
   });
+
+  const healthReporterService =
+  createHealthReporterService({
+    config: CONFIG,
+    log,
+
+    getSystemMetrics,
+
+    getBridgeToken: () =>
+      remoteCommandService.getBridgeToken(),
+
+    getRouterOsConnections: () =>
+      routeros.getPoolSize(),
+  });
 async function buildMetricsPayload() {
     const systemMetrics = await getSystemMetrics();
 
@@ -695,11 +712,15 @@ async function buildMetricsPayload() {
             heartbeatService.getStatus(),
 
         services: {
-            command_executor:
-                commandExecutor.getStatus()
-        },
-        remote_commands:
-  remoteCommandService.getMetrics()
+  command_executor:
+    commandExecutor.getStatus(),
+
+  health_reporter:
+    healthReporterService.getStatus(),
+},
+
+remote_commands:
+  remoteCommandService.getMetrics(),
     };
 }
 async function startServer() {
@@ -721,6 +742,13 @@ async function startServer() {
   );
   process.exit(1);
   return;
+}
+try {
+  healthReporterService.start();
+} catch (error) {
+  log(
+    `Health reporter not started: ${error.message}`
+  );
 }
   // The license is valid, so the server may now start.
   server.listen(CONFIG.TERMINAL_PORT, async () => {
@@ -820,7 +848,14 @@ async function gracefulShutdown(signal) {
       `Shutdown Telegram notification failed: ${e.message}`
     );
   }
-
+try {
+  healthReporterService.stop();
+  log('Health Reporter Service stopped.');
+} catch (error) {
+  log(
+    `Failed to stop Health Reporter Service: ${error.message}`
+  );
+}
   try {
     await remoteCommandService.stop();
     log('Remote Command Service stopped.');
