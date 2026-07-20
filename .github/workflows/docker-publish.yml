@@ -11,7 +11,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ Abbashjz2 }}/billflow-bridge
+  IMAGE_NAME: ${{ github.repository_owner }}/billflow-bridge
 
 jobs:
   build-and-push:
