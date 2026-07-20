@@ -717,7 +717,8 @@ async function buildMetricsPayload() {
 
         heartbeat:
             heartbeatService.getStatus(),
-
+        
+        update: updateService.getStatus(),
         services: {
   command_executor:
     commandExecutor.getStatus(),
