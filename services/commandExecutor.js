@@ -87,6 +87,7 @@ function createCommandExecutor({
       },
 
       checked_at: new Date().toISOString(),
+      update: updateService.getStatus(),
     };
   }
 

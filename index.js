@@ -301,6 +301,41 @@ const metrics = await buildMetricsPayload();
     metrics
   );
 }
+if (url.pathname === '/update/status') {
+  if (req.method !== 'GET') {
+    return sendJson(res, 405, {
+      ok: false,
+      error: 'method_not_allowed',
+    });
+  }
+
+  if (!CONFIG.MONITOR_SHARED_SECRET) {
+    return sendJson(res, 503, {
+      ok: false,
+      error: 'update_status_not_configured',
+    });
+  }
+
+  const suppliedSecret =
+    req.headers['x-monitor-secret'];
+
+  if (
+    !secureCompare(
+      suppliedSecret,
+      CONFIG.MONITOR_SHARED_SECRET
+    )
+  ) {
+    return sendJson(res, 401, {
+      ok: false,
+      error: 'unauthorized',
+    });
+  }
+
+  return sendJson(res, 200, {
+    ok: true,
+    update: updateService.getStatus(),
+  });
+}
 if (url.pathname === '/commands') {
 
     if (req.method !== 'POST') {
