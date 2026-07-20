@@ -1,7 +1,7 @@
 const {
   getHardwareFingerprint,
 } = require('./services/license');
-
+const { version } = require("./package.json");
 const CONFIG = {
   SUPABASE_URL:
     process.env.SUPABASE_URL ||
@@ -86,7 +86,7 @@ BRIDGE_HEARTBEAT_RETRY_COUNT: parseInt(
 ),
 
 BRIDGE_VERSION:
-  process.env.BRIDGE_VERSION || '1.0.0',
+  process.env.BRIDGE_VERSION || version,
   TELEGRAM_BOT_TOKEN:
     process.env.TELEGRAM_BOT_TOKEN || '',
 
@@ -193,4 +193,5 @@ BRIDGE_HEALTH_REPORT_URL:
 
 module.exports = {
   CONFIG,
+  BRIDGE_VERSION
 };
