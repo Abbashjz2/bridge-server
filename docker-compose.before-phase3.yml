@@ -1,0 +1,69 @@
+name: bridge-server
+services:
+  noc-server:
+    build:
+      context: /home/pi/bridge-server
+      dockerfile: Dockerfile
+    command:
+      - npm
+      - run
+      - dev
+    container_name: noc-server
+    environment:
+      BRIDGE_HEARTBEAT_INTERVAL_MS: "60000"
+      BRIDGE_HEARTBEAT_RETRY_COUNT: "3"
+      BRIDGE_HEARTBEAT_TIMEOUT_MS: "10000"
+      BRIDGE_HEARTBEAT_URL: https://vcabaubdlvjzeczfyfgc.supabase.co/functions/v1/bridge-heartbeat
+      BRIDGE_VALIDATION_SECRET: 0a59cfa9fd0ca68e07ccf3073da5b8b96393cfef164786b52d2c152d027854879f3e497d51c4c26fdd0fa763aa07e288
+      BRIDGE_VERSION: 1.0.0
+      INSTALLATION_ID: bridge-main-001
+      LICENSE_KEY: test-license-001
+      LICENSE_RECHECK_MS: "120000"
+      MONITOR_SHARED_SECRET: 123456@@
+      PING_INTERVAL_MS: "60000"
+      SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZjYWJhdWJkbHZqemVjemZ5ZmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExNjgzNTgsImV4cCI6MjA4Njc0NDM1OH0.NXTdq0Qzq4QYPWqYyoUz2OwDaQVmgJcae3KQg_P8aK0
+      SUPABASE_URL: https://vcabaubdlvjzeczfyfgc.supabase.co
+      TELEGRAM_BOT_TOKEN: 7959911068:AAHJMi3pTZpCLMGMDIVRPeGMsDKSmM5Kmsg
+      TELEGRAM_CHAT_ID: "498457772"
+      TENANT_ID: 759b6be6-9581-49cf-b09f-ee01dc7c4f17
+      TERMINAL_PORT: "3066"
+    hostname: bridge-server
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 3066
+        published: "3066"
+        protocol: tcp
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: /home/pi/bridge-server
+        target: /app
+        bind: {}
+      - type: volume
+        target: /app/node_modules
+        volume: {}
+      - type: bind
+        source: /sys
+        target: /host/sys
+        read_only: true
+        bind: {}
+      - type: bind
+        source: /proc/device-tree/model
+        target: /host/proc/device-tree/model
+        read_only: true
+        bind: {}
+      - type: bind
+        source: /etc/os-release
+        target: /host/etc/os-release
+        read_only: true
+        bind: {}
+      - type: bind
+        source: /
+        target: /host/root
+        read_only: true
+        bind: {}
+networks:
+  default:
+    name: bridge-server_default
