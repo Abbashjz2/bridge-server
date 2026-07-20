@@ -2,7 +2,7 @@ require("dotenv").config();
 const {
   getHardwareFingerprint,
 } = require('./services/license');
-const { version } = require("./utils/version");
+const { BRIDGE_VERSION } = require("./utils/version");
 const CONFIG = {
   SUPABASE_URL:
     process.env.SUPABASE_URL ||
@@ -86,7 +86,7 @@ BRIDGE_HEARTBEAT_RETRY_COUNT: parseInt(
   10
 ),
 
-  BRIDGE_VERSION: version,
+  BRIDGE_VERSION,
   TELEGRAM_BOT_TOKEN:
     process.env.TELEGRAM_BOT_TOKEN || '',
 
