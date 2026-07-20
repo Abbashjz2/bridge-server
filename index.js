@@ -66,6 +66,9 @@ const {
   createHeartbeatService,
 } = require('./services/heartbeat');
 const {
+  createUpdateService,
+} = require('./services/update');
+const {
     getSystemMetrics
 } = require('./services/systemMetrics');
 const {
@@ -590,7 +593,11 @@ const heartbeatService = createHeartbeatService({
     getActiveTerminals: () =>
       activeTerminalCount,
   });
-  
+   
+  const updateService = createUpdateService({
+  config: CONFIG,
+  log,
+});
   
   const commandExecutor = createCommandExecutor({
   log,
@@ -770,6 +777,13 @@ try {
    */
   log(
     `Heartbeat service not started: ${error.message}`
+  );
+}
+try {
+  updateService.start();
+} catch (error) {
+  log(
+    `Update service not started: ${error.message}`
   );
 }
     licenseService.startPeriodicValidation({

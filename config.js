@@ -189,6 +189,25 @@ BRIDGE_HEALTH_REPORT_URL:
     process.env.SUPABASE_URL ||
     'https://vcabaubdlvjzeczfyfgc.supabase.co'
   }/functions/v1/report-bridge-health`,
+
+
+  BRIDGE_LATEST_RELEASE_URL:
+  process.env.BRIDGE_LATEST_RELEASE_URL ||
+  `${
+    process.env.SUPABASE_URL ||
+    'https://vcabaubdlvjzeczfyfgc.supabase.co'
+  }/functions/v1/bridge-latest-release`,
+
+UPDATE_CHECK_INTERVAL_MS: parseInt(
+  process.env.UPDATE_CHECK_INTERVAL_MS ||
+    String(10 * 60 * 1000),
+  10
+),
+
+UPDATE_CHECK_TIMEOUT_MS: parseInt(
+  process.env.UPDATE_CHECK_TIMEOUT_MS || '10000',
+  10
+),
 };
 
 module.exports = {
