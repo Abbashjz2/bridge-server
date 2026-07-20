@@ -1,0 +1,19 @@
+services:
+  noc-server:
+    image: ghcr.io/YOUR_GITHUB_USERNAME/noc-server:1.0.0
+
+    container_name: noc-server
+    hostname: bridge-server
+    restart: unless-stopped
+
+    ports:
+      - "3066:3066"
+
+    volumes:
+      - /sys:/host/sys:ro
+      - /proc/device-tree/model:/host/proc/device-tree/model:ro
+      - /etc/os-release:/host/etc/os-release:ro
+      - /:/host/root:ro
+
+    env_file:
+      - .env
