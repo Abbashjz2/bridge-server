@@ -48,3 +48,20 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.value }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Publish release to Supabase
+        shell: bash
+        env:
+          RELEASE_SECRET: ${{ secrets.BRIDGE_RELEASE_PUBLISH_SECRET }}
+          RELEASE_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          curl --fail-with-body --show-error --silent \
+            -X POST \
+            "https://vcabaubdlvjzeczfyfgc.supabase.co/functions/v1/bridge-publish-release" \
+            -H "Content-Type: application/json" \
+            -H "x-release-secret: ${RELEASE_SECRET}" \
+            -d "{
+              \"version\": \"${RELEASE_VERSION}\",
+              \"docker_image\": \"ghcr.io/abbashjz2/billflow-bridge:${RELEASE_VERSION}\",
+              \"release_notes\": \"Automated release ${RELEASE_VERSION}\"
+            }"
