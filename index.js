@@ -703,7 +703,6 @@ const remoteCommandHandlers = {
   ),
 };
 
-  };
 const remoteCommandService =
   new RemoteCommandService({
     config: CONFIG,
