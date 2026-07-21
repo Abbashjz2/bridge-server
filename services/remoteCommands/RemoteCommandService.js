@@ -43,6 +43,7 @@ const SUPPORTED_COMMANDS = Object.freeze([
   'restart_monitor',
   'restart_heartbeat',
   'reset_router_pool',
+  'install_update',
 ]);
 
 function nowIso() { return new Date().toISOString(); }
