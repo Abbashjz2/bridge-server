@@ -696,7 +696,14 @@ const remoteCommandHandlers = {
       'reset_router_pool',
       payload
     ),
+    install_update: (payload) =>
+  executeRemoteCommand(
+    'install_update',
+    payload
+  ),
 };
+
+  };
 const remoteCommandService =
   new RemoteCommandService({
     config: CONFIG,
