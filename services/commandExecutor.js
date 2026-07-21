@@ -7,6 +7,7 @@ function createCommandExecutor({
   heartbeatService,
   routeros,
   getSystemMetrics,
+  updateInstallerService,
 }) {
   let commandRunning = false;
   let lastCommand = null;
@@ -174,6 +175,21 @@ function createCommandExecutor({
 
           break;
         }
+	case 'install_update': {
+  const version = payload?.version;
+
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    const error = new Error(
+      'Invalid update version. Expected MAJOR.MINOR.PATCH'
+    );
+
+    error.code = 'invalid_update_version';
+    throw error;
+  }
+
+  result = await updateInstallerService.install(version);
+  break;
+}
 
         default: {
           const error = new Error(
@@ -232,6 +248,7 @@ function createCommandExecutor({
         'restart_monitor',
         'restart_heartbeat',
         'reset_router_pool',
+	'install_update',
       ],
     };
   }

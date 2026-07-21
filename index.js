@@ -77,6 +77,7 @@ const {
 const {
   createCommandExecutor,
 } = require('./services/commandExecutor');
+const UpdateInstallerService = require('./services/UpdateInstallerService');
 const {
   RemoteCommandService,
 } = require('./services/remoteCommands/RemoteCommandService');
@@ -634,6 +635,7 @@ const heartbeatService = createHeartbeatService({
   log,
 });
   
+  const updateInstallerService = new UpdateInstallerService();
   const commandExecutor = createCommandExecutor({
   log,
   licenseService,
@@ -641,6 +643,7 @@ const heartbeatService = createHeartbeatService({
   heartbeatService,
   routeros,
   getSystemMetrics,
+  updateInstallerService,
 });
 async function executeRemoteCommand(
   command,

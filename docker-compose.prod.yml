@@ -1,6 +1,6 @@
 services:
   noc-server:
-    image: ghcr.io/YOUR_GITHUB_USERNAME/noc-server:1.0.0
+    image: ghcr.io/abbashjz2/billflow-bridge:${BRIDGE_VERSION}
 
     container_name: noc-server
     hostname: bridge-server
@@ -10,9 +10,16 @@ services:
       - "3066:3066"
 
     volumes:
+      # Raspberry Pi CPU temperature
       - /sys:/host/sys:ro
+
+      # Raspberry Pi model
       - /proc/device-tree/model:/host/proc/device-tree/model:ro
+
+      # Host operating-system information
       - /etc/os-release:/host/etc/os-release:ro
+
+      # Host root filesystem for disk metrics
       - /:/host/root:ro
 
     env_file:
