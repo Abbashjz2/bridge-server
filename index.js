@@ -261,6 +261,25 @@ const server = http.createServer(async (req, res) => {
         `(pool=${routeros.getPoolSize()})\n`
     );
   }
+  if (url.pathname === '/ping') {
+  if (req.method !== 'GET') {
+    return sendJson(res, 405, {
+      ok: false,
+      error: 'method_not_allowed',
+    });
+  }
+
+  return sendJson(res, 200, {
+    ok: true,
+    status: 'reachable',
+    bridge_version:
+      process.env.BRIDGE_VERSION || 'unknown',
+    uptime_seconds:
+      Math.floor(process.uptime()),
+    bridge_time:
+      new Date().toISOString(),
+  });
+}
   if (url.pathname === '/metrics') {
   if (req.method !== 'GET') {
     return sendJson(res, 405, {
