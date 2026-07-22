@@ -152,6 +152,8 @@ function createCommandExecutor({
 
           break;
         }
+        case "ping_server":
+  return remoteCommandHandlers.ping_server();
 
         case 'restart_heartbeat': {
           heartbeatService.stop();

@@ -44,6 +44,7 @@ const SUPPORTED_COMMANDS = Object.freeze([
   'restart_heartbeat',
   'reset_router_pool',
   'install_update',
+  "ping_server"
 ]);
 
 function nowIso() { return new Date().toISOString(); }

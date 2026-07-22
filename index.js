@@ -701,6 +701,16 @@ const remoteCommandHandlers = {
     'install_update',
     payload
   ),
+  ping_server: async () => {
+    return {
+      success: true,
+      message: "pong",
+      bridge_time: new Date().toISOString(),
+      uptime_seconds: Math.floor(process.uptime()),
+      bridge_version: process.env.BRIDGE_VERSION || "unknown",
+    };
+  },
+
 };
 
 const remoteCommandService =
