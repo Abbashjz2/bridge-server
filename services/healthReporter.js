@@ -200,7 +200,7 @@ function createHealthReporterService({
 
       lastSuccessAt =
         new Date().toISOString();
-
+      lastSuccessAt = new Date().toISOString();
       lastError = null;
       consecutiveErrors = 0;
     } catch (error) {
