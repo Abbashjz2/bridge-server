@@ -1,4 +1,5 @@
 const path = require("path");
+const { updateBridge } = require("./services/dockerService");
 const { updateBridgeVersion } = require("./services/envService");
 const { log } = require("./logger");
 const {
@@ -24,6 +25,11 @@ function checkForUpdateRequest() {
     updateBridgeVersion(ENV_FILE, request.version);
 
     log(`BRIDGE_VERSION updated to ${request.version}`);
+    log("Updating Docker...");
+
+    updateBridge();
+
+    log("Docker updated successfully");
     log("Test processing completed");
 
     completeRequest();
