@@ -248,6 +248,7 @@ function createHeartbeatService({
       `Bridge heartbeat service started ` +
         `(interval=${config.BRIDGE_HEARTBEAT_INTERVAL_MS}ms)`,
     );
+    log("test")
 
     /*
      * Send immediately instead of waiting for the first interval.
