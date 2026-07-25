@@ -1,11 +1,13 @@
-const { log } = require('./logger');
+const path = require("path");
+const { updateBridgeVersion } = require("./services/envService");
+const { log } = require("./logger");
 const {
   requestExists,
   claimRequest,
   completeRequest,
   failRequest,
-} = require('./requestService');
-
+} = require("./requestService");
+const ENV_FILE = path.join("/home/pi/bridge-server", ".env");
 function checkForUpdateRequest() {
   if (!requestExists()) {
     return;
@@ -15,15 +17,18 @@ function checkForUpdateRequest() {
     const request = claimRequest();
 
     if (!request.version) {
-      throw new Error('version is missing');
+      throw new Error("version is missing");
     }
 
     log(`Update request claimed for version ${request.version}`);
-    log('Test processing completed');
+    updateBridgeVersion(ENV_FILE, request.version);
+
+    log(`BRIDGE_VERSION updated to ${request.version}`);
+    log("Test processing completed");
 
     completeRequest();
 
-    log('Update request removed');
+    log("Update request removed");
   } catch (error) {
     log(`Update request failed: ${error.message}`);
 
@@ -35,7 +40,7 @@ function checkForUpdateRequest() {
   }
 }
 
-log('Billflow Updater started');
+log("Billflow Updater started");
 
 checkForUpdateRequest();
 
