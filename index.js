@@ -247,20 +247,33 @@ const server = http.createServer(async (req, res) => {
     `http://${req.headers.host}`
   );
 
-  if (
-    url.pathname === '/' ||
-    url.pathname === '/health'
-  ) {
-    res.writeHead(200, {
-      ...CORS,
-      'Content-Type': 'text/plain',
-    });
+  if (url.pathname === '/') {
+  res.writeHead(200, {
+    ...CORS,
+    'Content-Type': 'text/plain',
+  });
 
-    return res.end(
-      `device-bridge-server ok ` +
-        `(pool=${routeros.getPoolSize()})\n`
-    );
-  }
+  return res.end(
+    `device-bridge-server ok ` +
+      `(pool=${routeros.getPoolSize()})\n`
+  );
+}
+
+if (url.pathname === '/health') {
+  res.writeHead(200, {
+    ...CORS,
+    'Content-Type': 'application/json',
+  });
+
+  return res.end(
+    JSON.stringify({
+      ok: true,
+      status: 'healthy',
+      bridge_version: CONFIG.BRIDGE_VERSION,
+      router_pool_size: routeros.getPoolSize(),
+    })
+  );
+}
   if (url.pathname === '/ping') {
   if (req.method !== 'GET') {
     return sendJson(res, 405, {
