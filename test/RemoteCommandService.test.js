@@ -319,7 +319,8 @@ test('metrics never expose secrets or lease tokens', async () => {
 
 test('supported command list matches allowlist', () => {
   assert.deepEqual(SUPPORTED_COMMANDS.slice().sort(), [
-    'reset_router_pool', 'restart_heartbeat', 'restart_monitor',
-    'revalidate_license', 'run_diagnostics',
+    'install_update', 'ping_server', 'reset_router_pool',
+    'restart_heartbeat', 'restart_monitor', 'revalidate_license',
+    'run_diagnostics',
   ]);
 });

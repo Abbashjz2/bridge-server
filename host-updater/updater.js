@@ -8,7 +8,8 @@ const {
   completeRequest,
   failRequest,
 } = require("./requestService");
-const ENV_FILE = path.join("/home/pi/bridge-server", ".env");
+const BRIDGE_DIR = process.env.BRIDGE_DIR || "/opt/billflow-bridge";
+const ENV_FILE = path.join(BRIDGE_DIR, ".env");
 function checkForUpdateRequest() {
   if (!requestExists()) {
     return;

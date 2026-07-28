@@ -101,6 +101,7 @@ class RemoteCommandService {
       TENANT_ID: cfg.TENANT_ID || '',
       INSTALLATION_ID: cfg.INSTALLATION_ID || '',
       LICENSE_KEY: cfg.LICENSE_KEY || '',
+      DEVICE_SECRET: cfg.DEVICE_SECRET || '',
       BRIDGE_VALIDATION_SECRET: cfg.BRIDGE_VALIDATION_SECRET || '',
       HARDWARE_FINGERPRINT: cfg.HARDWARE_FINGERPRINT || '',
       BRIDGE_VERSION: cfg.BRIDGE_VERSION || '0.0.0',
@@ -151,10 +152,17 @@ class RemoteCommandService {
 
   validate() {
     const missing = [];
-    for (const k of ['SUPABASE_FUNCTIONS_URL', 'TENANT_ID', 'INSTALLATION_ID',
-      'LICENSE_KEY', 'BRIDGE_VALIDATION_SECRET', 'HARDWARE_FINGERPRINT']) {
+    for (const k of ['SUPABASE_FUNCTIONS_URL', 'INSTALLATION_ID', 'HARDWARE_FINGERPRINT']) {
       if (!this.cfg[k]) missing.push(k);
     }
+
+    const productionMode = Boolean(this.cfg.DEVICE_SECRET);
+    if (!productionMode) {
+      for (const k of ['TENANT_ID', 'LICENSE_KEY', 'BRIDGE_VALIDATION_SECRET']) {
+        if (!this.cfg[k]) missing.push(k);
+      }
+    }
+
     if (missing.length) {
       throw new Error('RemoteCommandService: missing required config: ' + missing.join(','));
     }
@@ -276,14 +284,23 @@ async getBridgeToken() {
     if (this._authInFlight) return this._authInFlight;
     this._authInFlight = (async () => {
       const url = `${this.cfg.SUPABASE_FUNCTIONS_URL}/bridge-auth`;
-      const body = {
-        api_version: this.cfg.BRIDGE_API_VERSION,
-        tenant_id: this.cfg.TENANT_ID,
-        license_key: this.cfg.LICENSE_KEY,
-        installation_id: this.cfg.INSTALLATION_ID,
-        hardware_fingerprint: this.cfg.HARDWARE_FINGERPRINT,
-        bridge_version: this.cfg.BRIDGE_VERSION,
-      };
+      const productionMode = Boolean(this.cfg.DEVICE_SECRET);
+      const body = productionMode
+        ? {
+            api_version: this.cfg.BRIDGE_API_VERSION,
+            installation_id: this.cfg.INSTALLATION_ID,
+            hardware_fingerprint: this.cfg.HARDWARE_FINGERPRINT,
+            device_secret: this.cfg.DEVICE_SECRET,
+            bridge_version: this.cfg.BRIDGE_VERSION,
+          }
+        : {
+            api_version: this.cfg.BRIDGE_API_VERSION,
+            tenant_id: this.cfg.TENANT_ID,
+            license_key: this.cfg.LICENSE_KEY,
+            installation_id: this.cfg.INSTALLATION_ID,
+            hardware_fingerprint: this.cfg.HARDWARE_FINGERPRINT,
+            bridge_version: this.cfg.BRIDGE_VERSION,
+          };
       const res = await this.fetch(url, {
         method: 'POST',
         headers: this._authHeaders(),
@@ -308,7 +325,7 @@ async getBridgeToken() {
       this._authFailures = 0;
       this._lastAuthErrorCode = null;
       this._lastAuthSuccessAt = nowIso();
-      this.logger('info', 'auth', { msg: 'authenticated', ttl_seconds: data.ttl_seconds });
+      this.logger('info', 'auth', { msg: 'authenticated', mode: this.cfg.DEVICE_SECRET ? 'production' : 'legacy', ttl_seconds: data.ttl_seconds });
       return true;
     })().finally(() => { this._authInFlight = null; });
     return this._authInFlight;
@@ -322,8 +339,10 @@ async getBridgeToken() {
   _authHeaders() {
     const h = {
       'content-type': 'application/json',
-      'x-bridge-secret': this.cfg.BRIDGE_VALIDATION_SECRET,
     };
+    if (!this.cfg.DEVICE_SECRET) {
+      h['x-bridge-secret'] = this.cfg.BRIDGE_VALIDATION_SECRET;
+    }
     if (this.cfg.SUPABASE_ANON_KEY) {
       h.apikey = this.cfg.SUPABASE_ANON_KEY;
       h.authorization = `Bearer ${this.cfg.SUPABASE_ANON_KEY}`;

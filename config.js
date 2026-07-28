@@ -60,11 +60,20 @@ const CONFIG = {
   LICENSE_KEY:
     process.env.LICENSE_KEY || '',
 
+  DEVICE_SECRET:
+    process.env.DEVICE_SECRET || '',
+
   HARDWARE_FINGERPRINT:
     getHardwareFingerprint(),
 
   BRIDGE_VALIDATION_SECRET:
     process.env.BRIDGE_VALIDATION_SECRET || '',
+
+  BRIDGE_AUTH_URL:
+    process.env.BRIDGE_AUTH_URL ||
+    `${process.env.SUPABASE_URL ||
+      'https://vcabaubdlvjzeczfyfgc.supabase.co'
+    }/functions/v1/bridge-auth`,
   BRIDGE_HEARTBEAT_URL:
   process.env.BRIDGE_HEARTBEAT_URL ||
   `${process.env.SUPABASE_URL ||
