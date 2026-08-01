@@ -319,8 +319,7 @@ if (url.pathname === '/health') {
   return sendJson(res, 200, {
     ok: true,
     status: 'reachable',
-    bridge_version:
-      process.env.BRIDGE_VERSION || 'unknown',
+      bridge_version: CONFIG.BRIDGE_VERSION,
     uptime_seconds:
       Math.floor(process.uptime()),
     bridge_time:
