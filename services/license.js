@@ -35,39 +35,61 @@ function createLicenseService({ config, log }) {
     return Boolean(config.DEVICE_SECRET);
   }
 
-  async function validateProductionCredential() {
-    if (!config.INSTALLATION_ID) throw new Error('INSTALLATION_ID is missing');
-    if (!config.HARDWARE_FINGERPRINT) throw new Error('HARDWARE_FINGERPRINT is missing');
-    if (!config.DEVICE_SECRET) throw new Error('DEVICE_SECRET is missing');
-
-    const response = await fetch(config.BRIDGE_AUTH_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(config.SUPABASE_ANON_KEY
-          ? { apikey: config.SUPABASE_ANON_KEY }
-          : {}),
-      },
-      body: JSON.stringify({
-        api_version: config.BRIDGE_API_VERSION,
-        installation_id: config.INSTALLATION_ID,
-        hardware_fingerprint: config.HARDWARE_FINGERPRINT,
-        device_secret: config.DEVICE_SECRET,
-        bridge_version: config.BRIDGE_VERSION,
-      }),
-    });
-
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok || !result.bridge_jwt) {
-      const error = new Error(
-        result.reason || result.error || `license server returned HTTP ${response.status}`
-      );
-      error.code = 'LICENSE_INVALID';
-      throw error;
-    }
-
-    lastMode = 'production';
+async function validateProductionCredential() {
+  if (!config.INSTALLATION_ID) {
+    throw new Error('INSTALLATION_ID is missing');
   }
+
+  if (!config.HARDWARE_FINGERPRINT) {
+    throw new Error('HARDWARE_FINGERPRINT is missing');
+  }
+
+  if (!config.DEVICE_SECRET) {
+    throw new Error('DEVICE_SECRET is missing');
+  }
+
+  const response = await fetch(config.BRIDGE_AUTH_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(config.SUPABASE_ANON_KEY
+        ? { apikey: config.SUPABASE_ANON_KEY }
+        : {}),
+    },
+    body: JSON.stringify({
+      api_version: config.BRIDGE_API_VERSION,
+      installation_id: config.INSTALLATION_ID,
+      hardware_fingerprint: config.HARDWARE_FINGERPRINT,
+      device_secret: config.DEVICE_SECRET,
+      bridge_version: config.BRIDGE_VERSION,
+    }),
+  });
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok || !result.bridge_jwt) {
+    const backendError =
+      result.reason ??
+      result.error ??
+      result.message ??
+      `license server returned HTTP ${response.status}`;
+
+    const errorMessage =
+      typeof backendError === 'string'
+        ? backendError
+        : JSON.stringify(backendError);
+
+    const error = new Error(errorMessage);
+
+    error.code = 'LICENSE_INVALID';
+    error.status = response.status;
+    error.response = result;
+
+    throw error;
+  }
+
+  lastMode = 'production';
+}
 
   async function validateLegacyCredential() {
     if (!config.TENANT_ID) throw new Error('TENANT_ID is missing');
