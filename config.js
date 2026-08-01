@@ -63,8 +63,10 @@ const CONFIG = {
   DEVICE_SECRET:
     process.env.DEVICE_SECRET || '',
 
-  HARDWARE_FINGERPRINT:
-    getHardwareFingerprint(),
+HARDWARE_FINGERPRINT:
+  process.env.BRIDGE_HW_FINGERPRINT ||
+  process.env.HARDWARE_FINGERPRINT ||
+  getHardwareFingerprint(),
 
   BRIDGE_VALIDATION_SECRET:
     process.env.BRIDGE_VALIDATION_SECRET || '',
