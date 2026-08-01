@@ -127,6 +127,35 @@ const CORS = {
 };
 
 function log(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
+function formatError(error) {
+  if (error instanceof Error) {
+    const details = {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+
+    if (error.status !== undefined) {
+      details.status = error.status;
+    }
+
+    if (error.response !== undefined) {
+      details.response = error.response;
+    }
+
+    if (error.cause !== undefined) {
+      details.cause = error.cause;
+    }
+
+    return JSON.stringify(details);
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
 function secureCompare(valueA, valueB) {
   const first = Buffer.from(
     String(valueA || ''),
@@ -229,8 +258,13 @@ const deviceRoutes = createDeviceRoutes({
 });
 // node-routeros can synchronously throw on certain unexpected replies
 // (e.g. "!empty"). Don't let that kill the whole bridge process.
-process.on('uncaughtException', (e) => log(`uncaughtException: ${e && e.message}`));
-process.on('unhandledRejection', (e) => log(`unhandledRejection: ${e && e.message}`));
+process.on('uncaughtException', (error) => {
+  log(`uncaughtException: ${formatError(error)}`);
+});
+
+process.on('unhandledRejection', (error) => {
+  log(`unhandledRejection: ${formatError(error)}`);
+});
 
 
 // ============================================================
@@ -822,21 +856,23 @@ async function startServer() {
   try {
     log('Validating bridge license...');
     await licenseService.validateLicense();
-  } catch (e) {
-    log(`License validation failed: ${e.message}`);
+    log('Bridge license validation successful.');
+  } catch (error) {
+    log(`License validation failed: ${formatError(error)}`);
     process.exit(1);
     return;
   }
+
   try {
-  await remoteCommandService.start();
-  log('Remote Command Service initialized.');
-} catch (error) {
-  log(
-    `Failed to initialize Remote Command Service: ${error.message}`
-  );
-  process.exit(1);
-  return;
-}
+    await remoteCommandService.start();
+    log('Remote Command Service initialized.');
+  } catch (error) {
+    log(
+      `Failed to initialize Remote Command Service: ${formatError(error)}`
+    );
+    process.exit(1);
+    return;
+  }
 try {
   healthReporterService.start();
 } catch (error) {
