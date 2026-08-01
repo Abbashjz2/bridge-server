@@ -4,14 +4,14 @@ const { execSync } = require('child_process');
 
 function updateBridge() {
   execSync(
-	execSync(`docker compose -f ${COMPOSE_FILE} pull`, {
-    { stdio: 'inherit' }
-  );
+  `docker compose --env-file ${BRIDGE_DIR}/.env -f ${COMPOSE_FILE} pull`,
+  { stdio: "inherit" }
+);
 
-  execSync(
-    execSync(`docker compose -f ${COMPOSE_FILE} up -d`,
-    { stdio: 'inherit' }
-  );
+execSync(
+  `docker compose --env-file ${BRIDGE_DIR}/.env -f ${COMPOSE_FILE} up -d --force-recreate`,
+  { stdio: "inherit" }
+);
 }
 
 module.exports = {
