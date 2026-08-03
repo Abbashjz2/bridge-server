@@ -890,23 +890,30 @@ try {
     log('========================================');
 
     monitorService.start();
-    try {
-  heartbeatService.start();
-} catch (error) {
-  /*
-   * A heartbeat configuration problem should be visible,
-   * but should not crash router monitoring immediately.
-   */
+    const isProductionAuth =
+  Boolean(CONFIG.DEVICE_SECRET) &&
+  Boolean(CONFIG.BRIDGE_AUTH_URL);
+
+if (isProductionAuth) {
   log(
-    `Heartbeat service not started: ${error.message}`
+    'Legacy heartbeat and update-check services skipped in production auth mode.'
   );
-}
-try {
-  updateService.start();
-} catch (error) {
-  log(
-    `Update service not started: ${error.message}`
-  );
+} else {
+  try {
+    heartbeatService.start();
+  } catch (error) {
+    log(
+      `Heartbeat service not started: ${error.message}`
+    );
+  }
+
+  try {
+    updateService.start();
+  } catch (error) {
+    log(
+      `Update service not started: ${error.message}`
+    );
+  }
 }
     licenseService.startPeriodicValidation({
   intervalMs: CONFIG.LICENSE_RECHECK_MS,
