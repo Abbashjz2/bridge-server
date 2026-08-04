@@ -703,6 +703,7 @@ const heartbeatService = createHeartbeatService({
   const updateInstallerService = new UpdateInstallerService();
   const commandExecutor = createCommandExecutor({
   log,
+  config: CONFIG,
   licenseService,
   monitorService,
   heartbeatService,
@@ -732,6 +733,11 @@ async function executeRemoteCommand(
 }
 
 const remoteCommandHandlers = {
+  update_settings: (payload) =>
+  executeRemoteCommand(
+    'update_settings',
+    payload
+  ),
   run_diagnostics: (payload) =>
     executeRemoteCommand(
       'run_diagnostics',

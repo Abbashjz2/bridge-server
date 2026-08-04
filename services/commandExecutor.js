@@ -1,7 +1,112 @@
+const fs = require('fs');
+const path = require('path');
 const crypto = require('crypto');
+
+
+const BRIDGE_ENV_FILE =
+  process.env.BRIDGE_ENV_FILE ||
+  '/opt/billflow-bridge/.env';
+
+const SETTINGS_KEY_MAP = {
+  telegram_bot_token: 'TELEGRAM_BOT_TOKEN',
+  telegram_chat_id: 'TELEGRAM_CHAT_ID',
+  telegram_enabled: 'TELEGRAM_ENABLED',
+};
+
+function normalizeSettingsPayload(payload) {
+const settings = payload?.settings || payload || {};
+const normalized = {};
+
+for (const [incomingKey, envKey] of Object.entries(SETTINGS_KEY_MAP)) {
+  if (!Object.prototype.hasOwnProperty.call(settings, incomingKey)) {
+    continue;
+  }
+
+  if (envKey === 'TELEGRAM_ENABLED') {
+    normalized[envKey] =
+      settings[incomingKey] === true ||
+      String(settings[incomingKey]).toLowerCase() === 'true'
+        ? 'true'
+        : 'false';
+  } else {
+    normalized[envKey] = String(settings[incomingKey] ?? '').trim();
+  }
+}
+
+  if (Object.keys(normalized).length === 0) {
+    const error = new Error(
+      'No supported settings were provided'
+    );
+    error.code = 'no_supported_settings';
+    throw error;
+  }
+
+  return normalized;
+}
+
+function updateEnvFileAtomically(envFile, updates) {
+  const currentText = fs.existsSync(envFile)
+    ? fs.readFileSync(envFile, 'utf8')
+    : '';
+
+  const lines = currentText.split(/\r?\n/);
+  const changedKeys = [];
+
+  for (const [key, newValue] of Object.entries(updates)) {
+    const prefix = `${key}=`;
+    const index = lines.findIndex((line) =>
+      line.startsWith(prefix)
+    );
+
+    const oldValue =
+      index >= 0
+        ? lines[index].slice(prefix.length)
+        : undefined;
+
+    if (oldValue === newValue) {
+      continue;
+    }
+
+    const newLine = `${key}=${newValue}`;
+
+    if (index >= 0) {
+      lines[index] = newLine;
+    } else {
+      lines.push(newLine);
+    }
+
+    changedKeys.push(key);
+  }
+
+  if (changedKeys.length === 0) {
+    return [];
+  }
+
+  const directory = path.dirname(envFile);
+  const temporaryFile = path.join(
+    directory,
+    `.env.tmp-${process.pid}-${Date.now()}`
+  );
+
+  const finalText =
+    lines.filter((line, index, all) =>
+      !(index === all.length - 1 && line === '')
+    ).join('\n') + '\n';
+
+  fs.writeFileSync(temporaryFile, finalText, {
+    mode: 0o600,
+  });
+
+  fs.renameSync(temporaryFile, envFile);
+  fs.chmodSync(envFile, 0o600);
+
+  return changedKeys;
+}
+
 
 function createCommandExecutor({
   log,
+  config,
   licenseService,
   monitorService,
   heartbeatService,
@@ -177,7 +282,61 @@ function createCommandExecutor({
 
           break;
         }
-	case 'install_update': {
+	case 'update_settings': {
+  const updates = normalizeSettingsPayload(payload);
+
+  const changedKeys = updateEnvFileAtomically(
+    BRIDGE_ENV_FILE,
+    updates
+  );
+
+  if (changedKeys.length > 0) {
+    if (
+      Object.prototype.hasOwnProperty.call(
+        updates,
+        'TELEGRAM_BOT_TOKEN'
+      )
+    ) {
+      config.TELEGRAM_BOT_TOKEN =
+        updates.TELEGRAM_BOT_TOKEN;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        updates,
+        'TELEGRAM_CHAT_ID'
+      )
+    ) {
+      config.TELEGRAM_CHAT_ID =
+        updates.TELEGRAM_CHAT_ID;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        updates,
+        'TELEGRAM_ENABLED'
+      )
+    ) {
+      config.TELEGRAM_ENABLED =
+        updates.TELEGRAM_ENABLED === 'true';
+    }
+
+    monitorService.stop();
+    monitorService.start();
+  }
+
+  result = {
+    applied: true,
+    changed: changedKeys.length > 0,
+    changed_keys: changedKeys,
+    telegram_monitor_restarted:
+      changedKeys.length > 0,
+  };
+
+  break;
+}
+
+  case 'install_update': {
   const version = payload?.version;
 
   if (!/^\d+\.\d+\.\d+$/.test(version)) {

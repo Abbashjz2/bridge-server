@@ -440,9 +440,10 @@ function createMonitorService({
     }
 
     if (
-      !config.TELEGRAM_BOT_TOKEN ||
-      !config.TELEGRAM_CHAT_ID
-    ) {
+  config.TELEGRAM_ENABLED === false ||
+  !config.TELEGRAM_BOT_TOKEN ||
+  !config.TELEGRAM_CHAT_ID
+) {
       log(
         'Telegram monitor: DISABLED ' +
           '(TELEGRAM_BOT_TOKEN/CHAT_ID not set)'

@@ -104,6 +104,9 @@ BRIDGE_HEARTBEAT_RETRY_COUNT: parseInt(
   TELEGRAM_CHAT_ID:
     process.env.TELEGRAM_CHAT_ID || '',
 
+  TELEGRAM_ENABLED:
+    String(process.env.TELEGRAM_ENABLED || 'true').toLowerCase() === 'true',
+
   MONITOR_INTERVAL_MS: parseInt(
     process.env.MONITOR_INTERVAL_MS || '60000',
     10
