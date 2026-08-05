@@ -1,0 +1,7 @@
+push new version:
+git add .
+git commit -m "Support dashboard Telegram settings payload"
+git tag v1.0.36
+git push
+git push origin v1.0.36
+

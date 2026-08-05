@@ -321,6 +321,6 @@ test('supported command list matches allowlist', () => {
   assert.deepEqual(SUPPORTED_COMMANDS.slice().sort(), [
     'install_update', 'ping_server', 'reset_router_pool',
     'restart_heartbeat', 'restart_monitor', 'revalidate_license',
-    'run_diagnostics',
+    'run_diagnostics','update_settings',
   ]);
 });

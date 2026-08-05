@@ -1,6 +1,6 @@
 {
   "name": "billflow-bridge",
-  "version": "1.0.32",
+  "version": "1.0.36",
   "description": "BillFlow device services: monitor (ICMP ping), terminal (SSH WebSocket), and bridge (terminal + REST dashboard API)",
   "main": "index.js",
   "type": "commonjs",
