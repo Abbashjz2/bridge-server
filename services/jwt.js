@@ -18,8 +18,14 @@ function createJwtService({ config, log }) {
       );
 
       if (!response.ok) {
-        return null;
-      }
+  const body = await response.text().catch(() => '');
+
+  log(
+    `JWT verification rejected: status=${response.status} body=${body}`
+  );
+
+  return null;
+}
 
       return await response.json();
     } catch (error) {
