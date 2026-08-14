@@ -22,11 +22,5 @@ services:
       # Host root filesystem for disk metrics
       - /:/host/root:ro
 
-      # Writable Bridge configuration
-      - /opt/billflow-bridge:/bridge-config
-
-    environment:
-      BRIDGE_ENV_FILE: /bridge-config/.env
-
     env_file:
       - .env
