@@ -240,6 +240,10 @@ const {
 } = createDeviceCache({
   supabaseUrl: CONFIG.SUPABASE_URL,
   bridgeValidationSecret: CONFIG.BRIDGE_VALIDATION_SECRET,
+
+  getBridgeToken: () =>
+    remoteCommandService.getBridgeToken(),
+
   log,
 });
 const monitorService = createMonitorService({

@@ -7,33 +7,54 @@ function deviceCacheKey(tenantId, deviceId) {
   return `${tenantId}:${deviceId}`;
 }
 
-function createDeviceCache({ supabaseUrl, bridgeValidationSecret, log }) {
+function createDeviceCache({ supabaseUrl, bridgeValidationSecret, getBridgeToken,log }) {
   async function getBridgeDevice(tenantId, deviceId) {
-    const response = await fetch(
-      `${supabaseUrl}/functions/v1/get-bridge-device`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-bridge-secret': bridgeValidationSecret,
-        },
-        body: JSON.stringify({
-          tenant_id: tenantId,
-          device_id: deviceId,
-        }),
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+
+  if (typeof getBridgeToken === 'function') {
+    try {
+      const token = await getBridgeToken();
+
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
       }
-    );
-
-    const result = await response.json().catch(() => ({}));
-
-    if (!response.ok || result.ok !== true || !result.device) {
-      throw new Error(
-        result.reason || `get-bridge-device returned HTTP ${response.status}`
+    } catch (error) {
+      log(
+        `Device resolver production auth unavailable: ${error.message}`
       );
     }
-
-    return result.device;
   }
+
+  if (!headers.Authorization && bridgeValidationSecret) {
+    headers['x-bridge-secret'] = bridgeValidationSecret;
+  }
+
+  const response = await fetch(
+    `${supabaseUrl}/functions/v1/get-bridge-device`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        tenant_id: tenantId,
+        device_id: deviceId,
+      }),
+    }
+  );
+
+  const result = await response.json().catch(() => ({}));
+
+  if (!response.ok || result.ok !== true || !result.device) {
+    throw new Error(
+      result.reason ||
+      result.error ||
+      `get-bridge-device returned HTTP ${response.status}`
+    );
+  }
+
+  return result.device;
+}
 
   async function resolveDevice(
   tenantId,
