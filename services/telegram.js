@@ -3,6 +3,7 @@ const fetch = require('node-fetch');
 function createTelegramService({ config, log }) {
   async function sendTelegram(message) {
     if (
+      config.TELEGRAM_ENABLED === false ||
       !config.TELEGRAM_BOT_TOKEN ||
       !config.TELEGRAM_CHAT_ID
     ) {
