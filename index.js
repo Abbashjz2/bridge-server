@@ -945,7 +945,7 @@ if (isProductionAuth) {
 });
     const startupMessage =
       `🟢 <b>Bridge Server Online</b>\n\n` +
-      `🖥 Hostname: <code>${os.hostname()}</code>\n` +
+      `🖥 Hostname:  <code>${CONFIG.BRIDGE_NAME}</code>\n` +
       `🌐 Port: <code>${CONFIG.TERMINAL_PORT}</code>\n` +
       `📡 Monitoring: Active\n` +
       `🕐 ${new Date().toLocaleString()}`;
@@ -980,7 +980,7 @@ async function gracefulShutdown(signal) {
 
   const shutdownMessage =
     `🔴 <b>Bridge Server Offline</b>\n\n` +
-    `🖥 Hostname: <code>${os.hostname()}</code>\n` +
+    `🖥 Hostname:  <code>${CONFIG.BRIDGE_NAME}</code>\n` +
     `⚠️ Reason: <code>${signal}</code>\n` +
     `🕐 ${new Date().toLocaleString()}`;
 
