@@ -4,6 +4,7 @@ const { execFile } = require('child_process');
 function createMonitorService({
   config,
   log,
+  getBridgeToken,
   sendTelegram,
 }) {
   const monitorState = new Map();
@@ -163,63 +164,86 @@ function createMonitorService({
   }
 
   async function fetchMonitoredDevices() {
-    if (!config.TENANT_ID) {
-      return [];
-    }
+  if (!config.TENANT_ID) {
+    return [];
+  }
 
-    if (!config.MONITOR_SHARED_SECRET) {
-      log(
-        'monitor: MONITOR_SHARED_SECRET not set, cannot fetch devices'
-      );
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      apikey: config.SUPABASE_ANON_KEY,
+    };
 
-      return [];
-    }
+    let usingProductionAuth = false;
 
-    try {
-      const response = await fetch(
-        `${config.SUPABASE_URL}/functions/v1/monitor-devices`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-monitor-secret':
-              config.MONITOR_SHARED_SECRET,
-            apikey: config.SUPABASE_ANON_KEY,
-            Authorization:
-              `Bearer ${config.SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            tenant_id: config.TENANT_ID,
-          }),
+    if (typeof getBridgeToken === 'function') {
+      try {
+        const token = await getBridgeToken();
+
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+          usingProductionAuth = true;
         }
-      );
-
-      if (!response.ok) {
-        const text = await response
-          .text()
-          .catch(() => '');
-
+      } catch (error) {
         log(
-          `monitor: fetch devices failed: HTTP ` +
-            `${response.status} ${text.slice(0, 200)}`
+          `monitor: production auth unavailable: ${error.message}`
+        );
+      }
+    }
+
+    if (!usingProductionAuth) {
+      if (!config.MONITOR_SHARED_SECRET) {
+        log(
+          'monitor: no production Bridge token and MONITOR_SHARED_SECRET not set'
         );
 
         return [];
       }
 
-      const data = await response.json();
+      headers['x-monitor-secret'] =
+        config.MONITOR_SHARED_SECRET;
 
-      return Array.isArray(data.devices)
-        ? data.devices
-        : [];
-    } catch (error) {
+      headers.Authorization =
+        `Bearer ${config.SUPABASE_ANON_KEY}`;
+    }
+
+    const response = await fetch(
+      `${config.SUPABASE_URL}/functions/v1/monitor-devices`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          tenant_id: config.TENANT_ID,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const text = await response
+        .text()
+        .catch(() => '');
+
       log(
-        `monitor: fetch devices failed: ${error.message}`
+        `monitor: fetch devices failed: HTTP ` +
+          `${response.status} ${text.slice(0, 200)}`
       );
 
       return [];
     }
+
+    const data = await response.json();
+
+    return Array.isArray(data.devices)
+      ? data.devices
+      : [];
+  } catch (error) {
+    log(
+      `monitor: fetch devices failed: ${error.message}`
+    );
+
+    return [];
   }
+}
 
   async function confirmedPing(host) {
     let result = await pingOnce(host, 16, 1000);

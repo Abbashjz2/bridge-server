@@ -249,6 +249,8 @@ const {
 const monitorService = createMonitorService({
     config: CONFIG,
     log,
+    getBridgeToken: () =>
+    remoteCommandService.getBridgeToken(),
     sendTelegram: telegramService.sendTelegram,
 });
 const deviceRoutes = createDeviceRoutes({
