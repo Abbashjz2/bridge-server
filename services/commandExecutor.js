@@ -7,7 +7,7 @@ const BRIDGE_ENV_FILE =
   process.env.BRIDGE_ENV_FILE ||
   '/opt/billflow-bridge/.env';
 
-const SETTINGS_MAP = {
+const SETTINGS_KEY_MAP = {
   telegram_bot_token: 'TELEGRAM_BOT_TOKEN',
   telegram_chat_id: 'TELEGRAM_CHAT_ID',
   telegram_enabled: 'TELEGRAM_ENABLED',
