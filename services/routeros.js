@@ -353,21 +353,19 @@ function createRouterOsService({ config, log }) {
           : null;
 
         if (monitor) {
-          linkSpeed =
-            monitor.rate ||
-            monitor['rate'] ||
-            null;
+  linkSpeed = monitor.rate || null;
 
-          if (monitor['full-duplex'] !== undefined) {
-            fullDuplex =
-              String(monitor['full-duplex']).toLowerCase() === 'true';
-          }
+  if (monitor['full-duplex'] === 'true') {
+    fullDuplex = 'Full';
+  } else if (monitor['full-duplex'] === 'false') {
+    fullDuplex = 'Half';
+  } else {
+    fullDuplex = null;
+  }
 
-          if (monitor['auto-negotiation'] !== undefined) {
-            autoNegotiation =
-              String(monitor['auto-negotiation']).toLowerCase() === 'true';
-          }
-        }
+  autoNegotiation =
+    monitor['auto-negotiation'] || null;
+}
       } catch (error) {
         // Do not fail the whole interfaces request
         // if Ethernet monitor is unavailable.
@@ -378,21 +376,21 @@ function createRouterOsService({ config, log }) {
     }
 
     result.push({
-      name: row.name,
-      type: row.type,
-      'mac-address': row['mac-address'],
-      running: String(row.running ?? ''),
-      disabled: String(row.disabled ?? ''),
-      mtu: row.mtu,
-      'rx-byte': row['rx-byte'],
-      'tx-byte': row['tx-byte'],
+  name: row.name,
+  type: row.type,
+  'mac-address': row['mac-address'],
+  running: String(row.running ?? ''),
+  disabled: String(row.disabled ?? ''),
+  mtu: row.mtu,
+  'rx-byte': row['rx-byte'],
+  'tx-byte': row['tx-byte'],
 
-      linkSpeed,
-      fullDuplex,
-      autoNegotiation,
+  linkSpeed,
+  duplex: fullDuplex,
+  autoNegotiation,
 
-      ...row,
-    });
+  ...row,
+});
   }
 
   return result;
