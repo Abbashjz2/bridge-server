@@ -45,13 +45,19 @@ function createDeviceCache({ supabaseUrl, bridgeValidationSecret, getBridgeToken
 
   const result = await response.json().catch(() => ({}));
 
-  if (!response.ok || result.ok !== true || !result.device) {
-    throw new Error(
-      result.reason ||
-      result.error ||
-      `get-bridge-device returned HTTP ${response.status}`
-    );
-  }
+if (!response.ok || result.ok !== true || !result.device) {
+  log(
+    `get-bridge-device rejected: status=${response.status} ` +
+    `result=${JSON.stringify(result)}`
+  );
+
+  throw new Error(
+    result.reason ||
+    result.error ||
+    result.message ||
+    `get-bridge-device returned HTTP ${response.status}`
+  );
+}
 
   return result.device;
 }
