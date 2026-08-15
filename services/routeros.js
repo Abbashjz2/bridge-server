@@ -344,6 +344,9 @@ function createRouterOsService({ config, log }) {
           `=numbers=${row.name}`,
           '=once=',
         ]);
+        log(
+  `Ethernet monitor raw for ${row.name}: ${JSON.stringify(monitorRows)}`
+);
 
         const monitor = Array.isArray(monitorRows)
           ? monitorRows[0]
