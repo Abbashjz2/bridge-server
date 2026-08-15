@@ -7,10 +7,11 @@ const BRIDGE_ENV_FILE =
   process.env.BRIDGE_ENV_FILE ||
   '/opt/billflow-bridge/.env';
 
-const SETTINGS_KEY_MAP = {
+const SETTINGS_MAP = {
   telegram_bot_token: 'TELEGRAM_BOT_TOKEN',
   telegram_chat_id: 'TELEGRAM_CHAT_ID',
   telegram_enabled: 'TELEGRAM_ENABLED',
+  bridge_name: 'BRIDGE_NAME',
 };
 
 function normalizeSettingsPayload(payload) {
@@ -320,6 +321,25 @@ function createCommandExecutor({
       config.TELEGRAM_ENABLED =
         updates.TELEGRAM_ENABLED === 'true';
     }
+    if (
+  Object.prototype.hasOwnProperty.call(
+    updates,
+    'TELEGRAM_ENABLED'
+  )
+) {
+  config.TELEGRAM_ENABLED =
+    updates.TELEGRAM_ENABLED === 'true';
+}
+
+// ADD THIS
+if (
+  Object.prototype.hasOwnProperty.call(
+    updates,
+    'BRIDGE_NAME'
+  )
+) {
+  config.BRIDGE_NAME = updates.BRIDGE_NAME;
+}
 
     monitorService.stop();
     monitorService.start();

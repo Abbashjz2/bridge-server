@@ -21,6 +21,10 @@ const CONFIG = {
     process.env.MIKROTIK_PORT || '22',
     10
   ),
+  BRIDGE_NAME:
+  process.env.BRIDGE_NAME ||
+  process.env.HOSTNAME ||
+  'Bridge',
 
   MIKROTIK_API_PORT: parseInt(
     process.env.MIKROTIK_API_PORT || '8728',
