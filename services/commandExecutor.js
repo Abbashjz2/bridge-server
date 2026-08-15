@@ -110,6 +110,7 @@ function createCommandExecutor({
   config,
   licenseService,
   monitorService,
+  updateService,
   heartbeatService,
   routeros,
   getSystemMetrics,

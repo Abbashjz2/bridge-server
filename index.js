@@ -713,6 +713,7 @@ const heartbeatService = createHeartbeatService({
   licenseService,
   monitorService,
   heartbeatService,
+  updateService,
   routeros,
   getSystemMetrics,
   updateInstallerService,
