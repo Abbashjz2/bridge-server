@@ -933,7 +933,7 @@ if (isProductionAuth) {
   onInvalid: async (error) => {
     const message =
       `⛔ <b>Bridge License Disabled</b>\n\n` +
-      `🖥 Hostname: <code>${os.hostname()}</code>\n` +
+      `🖥 Bridge: \`${CONFIG.BRIDGE_NAME}\`\n` +
       `📦 Installation: <code>${CONFIG.INSTALLATION_ID}</code>\n` +
       `⚠️ Reason: <code>${error.message}</code>\n` +
       `🕐 ${new Date().toLocaleString()}`;
