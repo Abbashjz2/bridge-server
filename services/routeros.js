@@ -323,11 +323,58 @@ function createRouterOsService({ config, log }) {
   }
 
   async function getInterfaces(ctx) {
-    const rows = await apiCmd(ctx, ['/interface/print']).catch(
-      () => []
-    );
+  const rows = await apiCmd(ctx, ['/interface/print']).catch(
+    () => []
+  );
 
-    return rows.map((row) => ({
+  const result = [];
+
+  for (const row of rows) {
+    let linkSpeed = null;
+    let fullDuplex = null;
+    let autoNegotiation = null;
+
+    const isEthernet =
+      String(row.type || '').toLowerCase() === 'ether';
+
+    if (isEthernet && row.name) {
+      try {
+        const monitorRows = await apiCmd(ctx, [
+          '/interface/ethernet/monitor',
+          `=numbers=${row.name}`,
+          '=once=',
+        ]);
+
+        const monitor = Array.isArray(monitorRows)
+          ? monitorRows[0]
+          : null;
+
+        if (monitor) {
+          linkSpeed =
+            monitor.rate ||
+            monitor['rate'] ||
+            null;
+
+          if (monitor['full-duplex'] !== undefined) {
+            fullDuplex =
+              String(monitor['full-duplex']).toLowerCase() === 'true';
+          }
+
+          if (monitor['auto-negotiation'] !== undefined) {
+            autoNegotiation =
+              String(monitor['auto-negotiation']).toLowerCase() === 'true';
+          }
+        }
+      } catch (error) {
+        // Do not fail the whole interfaces request
+        // if Ethernet monitor is unavailable.
+        log(
+          `Ethernet monitor failed for ${row.name}: ${error.message}`
+        );
+      }
+    }
+
+    result.push({
       name: row.name,
       type: row.type,
       'mac-address': row['mac-address'],
@@ -336,11 +383,17 @@ function createRouterOsService({ config, log }) {
       mtu: row.mtu,
       'rx-byte': row['rx-byte'],
       'tx-byte': row['tx-byte'],
-      comment: row.comment || '',
+
+      linkSpeed,
+      fullDuplex,
+      autoNegotiation,
+
       ...row,
-    }));
+    });
   }
 
+  return result;
+}
   async function getLogs(ctx, limit = 100) {
     const safeLimit = Math.min(
       Math.max(parseInt(limit, 10) || 100, 1),
