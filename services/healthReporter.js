@@ -96,6 +96,29 @@ function createHealthReporterService({
        */
       router_connections_failed: null,
 
+      platform:
+  system.platform || null,
+
+architecture:
+  system.architecture || null,
+
+kernel_release:
+  system.kernel_release || null,
+
+node_version:
+  system.node_version || null,
+
+os_name:
+  system.operating_system?.name || null,
+
+os_pretty_name:
+  system.operating_system?.pretty_name || null,
+
+os_version:
+  system.operating_system?.version || null,
+
+os_version_id:
+  system.operating_system?.version_id || null,
       bridge_version:
         config.BRIDGE_VERSION,
     };
