@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-const { pollTarget } = require('../services/snmp');
-
+const { pollTarget } = require('../snmp');
 async function main() {
   const target = {
     name: process.env.SNMP_NAME || process.env.SNMP_HOST,

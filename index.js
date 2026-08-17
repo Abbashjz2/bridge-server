@@ -817,7 +817,10 @@ async function fetchBridgeMonitoringTargets() {
   if (!CONFIG.SNMP_MONITOR_ENABLED) return [];
 
   if (CONFIG.LOCAL_DEV_MODE) {
-    return loadStaticSnmpTargets(process.env);
+    return loadStaticSnmpTargets(process.env).map((target) => ({
+      ...target,
+      static_local_target: true,
+    }));
   }
 
   const bridgeToken = await remoteCommandService.getBridgeToken();
@@ -866,8 +869,24 @@ async function fetchBridgeMonitoringTargets() {
           poll_interval_seconds: monitoring.poll_interval_seconds || 60,
           alert_link_down: alerts.link_down ?? monitoring.alert_link_down ?? true,
           alert_speed_degraded: alerts.speed_degraded ?? alerts.interface_speed ?? monitoring.alert_speed_degraded ?? true,
-          alert_snmp_unreachable: alerts.snmp_unreachable ?? alerts.device_unreachable ?? true,
+          alert_snmp_unreachable:
+            alerts.snmp_unreachable ?? alerts.device_unreachable ?? alerts.device_offline ?? true,
           min_interface_speed_mbps: monitoring.min_interface_speed_mbps || 0,
+          interfaces: Array.isArray(device.interfaces)
+            ? device.interfaces.map((iface) => ({
+                interface_index: iface.interface_index,
+                name: iface.name,
+                monitoring_enabled: iface.monitoring_enabled !== false,
+                alerts: iface.alerts || {},
+                minimum_speed_mbps: iface.minimum_speed_mbps,
+                rx_error_threshold: iface.rx_error_threshold,
+                tx_error_threshold: iface.tx_error_threshold,
+                rx_min_mbps: iface.rx_min_mbps,
+                rx_max_mbps: iface.rx_max_mbps,
+                tx_min_mbps: iface.tx_min_mbps,
+                tx_max_mbps: iface.tx_max_mbps,
+              }))
+            : [],
           version: snmpConfig.version || '2c',
           port: snmpConfig.port || 161,
           timeout_ms: snmpConfig.timeout_ms || snmpConfig.timeout || 3000,
@@ -886,9 +905,62 @@ async function fetchBridgeMonitoringTargets() {
   }
 }
 
+async function reportDiscoveredInterfaces(target, snapshot) {
+  if (CONFIG.LOCAL_DEV_MODE || !target?.device_id) return;
+
+  const bridgeToken = await remoteCommandService.getBridgeToken();
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    CONFIG.BRIDGE_REPORT_INTERFACES_TIMEOUT_MS
+  );
+  timeout.unref?.();
+
+  try {
+    const interfaces = (snapshot?.interfaces || []).slice(0, 512).map((iface) => ({
+      interface_index: iface.index,
+      name: iface.name || iface.display_name || null,
+      description: iface.description || null,
+      admin_status: iface.admin_status ?? null,
+      oper_status: iface.oper_status ?? null,
+      speed_bps: iface.speed_bps ?? null,
+      high_speed_mbps: iface.high_speed_mbps ?? null,
+      rx_octets: iface.rx_octets ?? null,
+      tx_octets: iface.tx_octets ?? null,
+      rx_errors: iface.rx_errors ?? null,
+      tx_errors: iface.tx_errors ?? null,
+    }));
+
+    const response = await fetch(CONFIG.BRIDGE_REPORT_INTERFACES_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${bridgeToken}`,
+        apikey: CONFIG.SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        api_version: CONFIG.BRIDGE_API_VERSION,
+        device_id: target.device_id,
+        interfaces,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(
+        `bridge-report-interfaces HTTP ${response.status}: ${text.slice(0, 160)}`
+      );
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 const snmpMonitorService = createSnmpMonitor({
   getTargets: fetchBridgeMonitoringTargets,
   sendTelegram: telegramService.sendTelegram,
+  onSnapshot: reportDiscoveredInterfaces,
   log,
   intervalMs: CONFIG.SNMP_MONITOR_INTERVAL_MS,
 });

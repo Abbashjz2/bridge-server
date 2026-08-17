@@ -168,6 +168,17 @@ BRIDGE_HEARTBEAT_RETRY_COUNT: parseInt(
     10
   ),
 
+  BRIDGE_REPORT_INTERFACES_URL:
+    process.env.BRIDGE_REPORT_INTERFACES_URL ||
+    `${process.env.SUPABASE_URL ||
+      'https://vcabaubdlvjzeczfyfgc.supabase.co'
+    }/functions/v1/bridge-report-interfaces`,
+
+  BRIDGE_REPORT_INTERFACES_TIMEOUT_MS: parseInt(
+    process.env.BRIDGE_REPORT_INTERFACES_TIMEOUT_MS || '10000',
+    10
+  ),
+
   COMMAND_POLL_ENABLED:
     process.env.COMMAND_POLL_ENABLED === 'true',
 
