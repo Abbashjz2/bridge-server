@@ -4,6 +4,9 @@ const {
 } = require('./services/license');
 const { BRIDGE_VERSION } = require("./utils/version");
 const CONFIG = {
+  LOCAL_DEV_MODE:
+    String(process.env.LOCAL_DEV_MODE || 'false').toLowerCase() === 'true',
+
   SUPABASE_URL:
     process.env.SUPABASE_URL ||
     'https://vcabaubdlvjzeczfyfgc.supabase.co',
@@ -143,6 +146,25 @@ BRIDGE_HEARTBEAT_RETRY_COUNT: parseInt(
 
   BRIDGE_API_VERSION: parseInt(
     process.env.BRIDGE_API_VERSION || '1',
+    10
+  ),
+
+  SNMP_MONITOR_ENABLED:
+    String(process.env.SNMP_MONITOR_ENABLED || 'true').toLowerCase() === 'true',
+
+  SNMP_MONITOR_INTERVAL_MS: parseInt(
+    process.env.SNMP_MONITOR_INTERVAL_MS || '10000',
+    10
+  ),
+
+  BRIDGE_MONITORING_CONFIG_URL:
+    process.env.BRIDGE_MONITORING_CONFIG_URL ||
+    `${process.env.SUPABASE_URL ||
+      'https://vcabaubdlvjzeczfyfgc.supabase.co'
+    }/functions/v1/bridge-monitoring-config`,
+
+  BRIDGE_MONITORING_CONFIG_TIMEOUT_MS: parseInt(
+    process.env.BRIDGE_MONITORING_CONFIG_TIMEOUT_MS || '10000',
     10
   ),
 

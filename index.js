@@ -58,6 +58,7 @@ const { createJwtService } = require('./services/jwt');
 const {
   createTelegramService,
 } = require('./services/telegram');
+const { createSnmpMonitor } = require('./services/snmpMonitor');
 
 const {
   createDeviceRoutes,
@@ -81,6 +82,7 @@ const UpdateInstallerService = require('./services/UpdateInstallerService');
 const {
   RemoteCommandService,
 } = require('./services/remoteCommands/RemoteCommandService');
+const { loadStaticSnmpTargets } = require('./services/snmpStaticTargets');
 
 function patchRouterOsEmptyReply() {
   try {
@@ -706,7 +708,9 @@ const heartbeatService = createHeartbeatService({
   log,
 });
   
-  const updateInstallerService = new UpdateInstallerService();
+  const updateInstallerService = CONFIG.LOCAL_DEV_MODE
+    ? null
+    : new UpdateInstallerService();
   const commandExecutor = createCommandExecutor({
   log,
   config: CONFIG,
@@ -809,6 +813,86 @@ const remoteCommandService =
     },
   });
 
+async function fetchBridgeMonitoringTargets() {
+  if (!CONFIG.SNMP_MONITOR_ENABLED) return [];
+
+  if (CONFIG.LOCAL_DEV_MODE) {
+    return loadStaticSnmpTargets(process.env);
+  }
+
+  const bridgeToken = await remoteCommandService.getBridgeToken();
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    CONFIG.BRIDGE_MONITORING_CONFIG_TIMEOUT_MS
+  );
+  timeout.unref?.();
+
+  try {
+    const response = await fetch(CONFIG.BRIDGE_MONITORING_CONFIG_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${bridgeToken}`,
+        apikey: CONFIG.SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      throw new Error(`monitoring-config HTTP ${response.status}: ${text.slice(0, 160)}`);
+    }
+
+    const data = await response.json();
+    const devices = Array.isArray(data?.devices) ? data.devices : [];
+
+    return devices
+      .filter((device) => device?.monitoring_enabled !== false)
+      .filter((device) => device?.monitoring?.snmp_enabled === true && device?.snmp)
+      .map((device) => {
+        const monitoring = device.monitoring || {};
+        const alerts = monitoring.alerts || {};
+        const snmpConfig = device.snmp || {};
+        return {
+          id: device.device_id || device.id,
+          device_id: device.device_id || device.id,
+          name: device.name,
+          host: device.host,
+          vendor: device.vendor,
+          device_type: device.device_type,
+          model: device.model,
+          snmp_enabled: true,
+          poll_interval_seconds: monitoring.poll_interval_seconds || 60,
+          alert_link_down: alerts.link_down ?? monitoring.alert_link_down ?? true,
+          alert_speed_degraded: alerts.speed_degraded ?? alerts.interface_speed ?? monitoring.alert_speed_degraded ?? true,
+          alert_snmp_unreachable: alerts.snmp_unreachable ?? alerts.device_unreachable ?? true,
+          min_interface_speed_mbps: monitoring.min_interface_speed_mbps || 0,
+          version: snmpConfig.version || '2c',
+          port: snmpConfig.port || 161,
+          timeout_ms: snmpConfig.timeout_ms || snmpConfig.timeout || 3000,
+          retries: snmpConfig.retries ?? 1,
+          community: snmpConfig.community,
+          username: snmpConfig.username,
+          security_level: snmpConfig.security_level,
+          auth_protocol: snmpConfig.auth_protocol,
+          auth_key: snmpConfig.auth_key,
+          priv_protocol: snmpConfig.priv_protocol,
+          priv_key: snmpConfig.priv_key,
+        };
+      });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+const snmpMonitorService = createSnmpMonitor({
+  getTargets: fetchBridgeMonitoringTargets,
+  sendTelegram: telegramService.sendTelegram,
+  log,
+  intervalMs: CONFIG.SNMP_MONITOR_INTERVAL_MS,
+});
+
   const healthReporterService =
   createHealthReporterService({
     config: CONFIG,
@@ -857,6 +941,9 @@ async function buildMetricsPayload() {
 
   health_reporter:
     healthReporterService.getStatus(),
+
+  snmp_monitor:
+    snmpMonitorService.getStatus(),
 },
 
 remote_commands:
@@ -864,33 +951,51 @@ remote_commands:
     };
 }
 async function startServer() {
-  // Validate before opening the HTTP/WebSocket port.
-  try {
-    log('Validating bridge license...');
-    await licenseService.validateLicense();
-    log('Bridge license validation successful.');
-  } catch (error) {
-    log(`License validation failed: ${formatError(error)}`);
-    process.exit(1);
-    return;
+  if (CONFIG.LOCAL_DEV_MODE) {
+    log('LOCAL DEV MODE enabled: production license/auth/health services are skipped.');
+  } else {
+    // Validate before opening the HTTP/WebSocket port.
+    try {
+      log('Validating bridge license...');
+      await licenseService.validateLicense();
+      log('Bridge license validation successful.');
+    } catch (error) {
+      log(`License validation failed: ${formatError(error)}`);
+      process.exit(1);
+      return;
+    }
+
+    try {
+      await remoteCommandService.start();
+      log('Remote Command Service initialized.');
+    } catch (error) {
+      log(
+        `Failed to initialize Remote Command Service: ${formatError(error)}`
+      );
+      process.exit(1);
+      return;
+    }
   }
 
+try {
+  if (CONFIG.SNMP_MONITOR_ENABLED) {
+    snmpMonitorService.start();
+    log('SNMP Monitor Service initialized.');
+  } else {
+    log('SNMP Monitor Service disabled by config.');
+  }
+} catch (error) {
+  log(`SNMP monitor not started: ${error.message}`);
+}
+
+if (!CONFIG.LOCAL_DEV_MODE) {
   try {
-    await remoteCommandService.start();
-    log('Remote Command Service initialized.');
+    healthReporterService.start();
   } catch (error) {
     log(
-      `Failed to initialize Remote Command Service: ${formatError(error)}`
+      `Health reporter not started: ${error.message}`
     );
-    process.exit(1);
-    return;
   }
-try {
-  healthReporterService.start();
-} catch (error) {
-  log(
-    `Health reporter not started: ${error.message}`
-  );
 }
   // The license is valid, so the server may now start.
   server.listen(CONFIG.TERMINAL_PORT, async () => {
@@ -902,12 +1007,16 @@ try {
     log('  NOTE: enable RouterOS API on each device:  /ip service enable api');
     log('========================================');
 
-    monitorService.start();
+    if (!CONFIG.LOCAL_DEV_MODE) {
+      monitorService.start();
+    }
     const isProductionAuth =
   Boolean(CONFIG.DEVICE_SECRET) &&
   Boolean(CONFIG.BRIDGE_AUTH_URL);
 
-if (isProductionAuth) {
+if (CONFIG.LOCAL_DEV_MODE) {
+  log('Legacy ping monitor, heartbeat and update-check skipped in local dev mode.');
+} else if (isProductionAuth) {
   log(
     'Legacy heartbeat and update-check services skipped in production auth mode.'
   );
@@ -928,7 +1037,7 @@ if (isProductionAuth) {
     );
   }
 }
-    licenseService.startPeriodicValidation({
+    if (!CONFIG.LOCAL_DEV_MODE) licenseService.startPeriodicValidation({
   intervalMs: CONFIG.LICENSE_RECHECK_MS,
 
   onInvalid: async (error) => {
@@ -1004,6 +1113,13 @@ async function gracefulShutdown(signal) {
       `Shutdown Telegram notification failed: ${e.message}`
     );
   }
+try {
+  snmpMonitorService.stop();
+  log('SNMP Monitor Service stopped.');
+} catch (error) {
+  log(`Failed to stop SNMP Monitor Service: ${error.message}`);
+}
+
 try {
   healthReporterService.stop();
   log('Health Reporter Service stopped.');

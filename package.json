@@ -7,8 +7,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon -L index.js",
-    "snmp:test": "node scripts/snmp-test.js",
-    "snmp:monitor": "node scripts/snmp-monitor.js"
+    "snmp:test": "node services/scripts/snmp-test.js",
+    "snmp:monitor": "node services/scripts/snmp-monitor.js"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
