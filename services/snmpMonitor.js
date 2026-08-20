@@ -230,7 +230,12 @@ function createSnmpMonitor({
         `🌐 IP: <code>${target.host}</code>`
       );
     }
-    state.set(deviceKey, { online: true, at: Date.now() });
+    state.set(deviceKey, {
+      ...(previousDevice || {}),
+      online: true,
+      at: Date.now(),
+      error: null,
+    });
 
     const rules = ruleMap(target);
 
@@ -263,6 +268,84 @@ function createSnmpMonitor({
     }
   }
 
+  async function evaluateDeviceMetrics(target, metrics) {
+    if (!metrics || typeof metrics !== 'object') return;
+
+    const deviceKey = key(target);
+    const previous = state.get(deviceKey) || { online: true, at: Date.now() };
+    const current = { ...previous };
+
+    const cpu = toNumber(metrics.cpu_percent);
+    const memory = toNumber(metrics.memory_percent);
+    const cpuThreshold = toNumber(target.cpu_threshold_percent);
+    const memoryThreshold = toNumber(target.memory_threshold_percent);
+
+    if (target.alert_high_cpu === true && cpu !== null && cpuThreshold !== null) {
+      const bad = cpu > cpuThreshold;
+
+      // First metric sample is baseline only, matching interface behavior.
+      if (previous.cpuSeen) {
+        if (bad && !previous.cpuAlarm) {
+          await alert(
+            `⚠️ <b>High CPU Usage</b>\n\n` +
+            `📡 Device: <code>${target.name || target.host}</code>\n` +
+            `🌐 IP: <code>${target.host}</code>\n` +
+            `🧠 CPU: <code>${cpu}%</code>\n` +
+            `⚠️ Threshold: <code>${cpuThreshold}%</code>`
+          );
+        } else if (!bad && previous.cpuAlarm) {
+          await alert(
+            `🟢 <b>CPU Recovered</b>\n\n` +
+            `📡 Device: <code>${target.name || target.host}</code>\n` +
+            `🧠 CPU: <code>${cpu}%</code>\n` +
+            `✅ Threshold: <code>${cpuThreshold}%</code>`
+          );
+        }
+      }
+
+      current.cpuSeen = true;
+      current.cpuAlarm = bad;
+      current.cpuPercent = cpu;
+    } else {
+      current.cpuAlarm = false;
+      current.cpuPercent = cpu;
+    }
+
+    if (target.alert_high_memory === true && memory !== null && memoryThreshold !== null) {
+      const bad = memory > memoryThreshold;
+
+      if (previous.memorySeen) {
+        if (bad && !previous.memoryAlarm) {
+          await alert(
+            `⚠️ <b>High Memory Usage</b>\n\n` +
+            `📡 Device: <code>${target.name || target.host}</code>\n` +
+            `🌐 IP: <code>${target.host}</code>\n` +
+            `💾 Memory: <code>${memory}%</code>\n` +
+            `⚠️ Threshold: <code>${memoryThreshold}%</code>`
+          );
+        } else if (!bad && previous.memoryAlarm) {
+          await alert(
+            `🟢 <b>Memory Recovered</b>\n\n` +
+            `📡 Device: <code>${target.name || target.host}</code>\n` +
+            `💾 Memory: <code>${memory}%</code>\n` +
+            `✅ Threshold: <code>${memoryThreshold}%</code>`
+          );
+        }
+      }
+
+      current.memorySeen = true;
+      current.memoryAlarm = bad;
+      current.memoryPercent = memory;
+    } else {
+      current.memoryAlarm = false;
+      current.memoryPercent = memory;
+    }
+
+    current.metricSource = metrics.source || null;
+    current.metricsAt = Date.now();
+    state.set(deviceKey, current);
+  }
+
   async function pollOne(target) {
     const deviceKey = key(target);
     try {
@@ -279,6 +362,20 @@ function createSnmpMonitor({
       }
 
       await evaluate(target, snapshot);
+
+      const wantsDeviceMetrics =
+        target.alert_high_cpu === true ||
+        target.alert_high_memory === true;
+
+      if (wantsDeviceMetrics) {
+        const metrics = snapshot?.metrics;
+        if (metrics?.error) {
+          // Vendor metric failure is separate from device/interface reachability.
+          log(`snmp-metrics: collection failed for ${target.host}: ${metrics.error}`);
+        } else if (metrics) {
+          await evaluateDeviceMetrics(target, metrics);
+        }
+      }
     } catch (error) {
       const previous = state.get(deviceKey);
       if ((!previous || previous.online !== false) && enabled(target.alert_snmp_unreachable)) {

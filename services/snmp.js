@@ -5,6 +5,7 @@ const OIDS = {
   sysObjectID: '1.3.6.1.2.1.1.2.0',
   sysUpTime: '1.3.6.1.2.1.1.3.0',
   sysName: '1.3.6.1.2.1.1.5.0',
+
   ifDescr: '1.3.6.1.2.1.2.2.1.2',
   ifSpeed: '1.3.6.1.2.1.2.2.1.5',
   ifAdminStatus: '1.3.6.1.2.1.2.2.1.7',
@@ -15,12 +16,25 @@ const OIDS = {
   ifOutErrors: '1.3.6.1.2.1.2.2.1.20',
   ifName: '1.3.6.1.2.1.31.1.1.1.1',
   ifHighSpeed: '1.3.6.1.2.1.31.1.1.1.15',
+
+  // HOST-RESOURCES-MIB. RouterOS exposes /system resource values here.
+  hrProcessorLoad: '1.3.6.1.2.1.25.3.3.1.2',
+  hrStorageType: '1.3.6.1.2.1.25.2.3.1.2',
+  hrStorageAllocationUnits: '1.3.6.1.2.1.25.2.3.1.4',
+  hrStorageSize: '1.3.6.1.2.1.25.2.3.1.5',
+  hrStorageUsed: '1.3.6.1.2.1.25.2.3.1.6',
+  hrStorageRam: '1.3.6.1.2.1.25.2.1.2',
 };
 
 function valueToJs(value) {
   if (Buffer.isBuffer(value)) return value.toString('utf8').replace(/\0+$/g, '');
   if (typeof value === 'bigint') return value.toString();
   return value;
+}
+
+function normalizeOidValue(value) {
+  if (value === undefined || value === null) return '';
+  return String(value).replace(/^\./, '');
 }
 
 function normalizeVersion(value) {
@@ -106,8 +120,11 @@ function indexFromOid(base, oid) {
 
 async function withSession(target, fn) {
   const session = createSession(target);
-  try { return await fn(session); }
-  finally { try { session.close(); } catch {} }
+  try {
+    return await fn(session);
+  } finally {
+    try { session.close(); } catch {}
+  }
 }
 
 async function getSystemInfo(target) {
@@ -125,9 +142,16 @@ async function getSystemInfo(target) {
 async function getInterfaces(target) {
   return withSession(target, async (session) => {
     const [descr, names, speed, highSpeed, admin, oper, inOctets, outOctets, inErrors, outErrors] = await Promise.all([
-      subtree(session, OIDS.ifDescr), subtree(session, OIDS.ifName), subtree(session, OIDS.ifSpeed), subtree(session, OIDS.ifHighSpeed),
-      subtree(session, OIDS.ifAdminStatus), subtree(session, OIDS.ifOperStatus), subtree(session, OIDS.ifInOctets), subtree(session, OIDS.ifOutOctets),
-      subtree(session, OIDS.ifInErrors), subtree(session, OIDS.ifOutErrors),
+      subtree(session, OIDS.ifDescr),
+      subtree(session, OIDS.ifName),
+      subtree(session, OIDS.ifSpeed),
+      subtree(session, OIDS.ifHighSpeed),
+      subtree(session, OIDS.ifAdminStatus),
+      subtree(session, OIDS.ifOperStatus),
+      subtree(session, OIDS.ifInOctets),
+      subtree(session, OIDS.ifOutOctets),
+      subtree(session, OIDS.ifInErrors),
+      subtree(session, OIDS.ifOutErrors),
     ]);
 
     const map = new Map();
@@ -138,6 +162,7 @@ async function getInterfaces(target) {
         map.get(idx)[key] = row.value;
       }
     };
+
     apply(descr, OIDS.ifDescr, 'description');
     apply(names, OIDS.ifName, 'name');
     apply(speed, OIDS.ifSpeed, 'speed_bps');
@@ -149,20 +174,145 @@ async function getInterfaces(target) {
     apply(inErrors, OIDS.ifInErrors, 'rx_errors');
     apply(outErrors, OIDS.ifOutErrors, 'tx_errors');
 
-    return [...map.values()].sort((a, b) => a.index - b.index).map((row) => ({
-      ...row,
-      display_name: row.name || row.description || `if${row.index}`,
-      link_up: Number(row.oper_status) === 1,
-      admin_up: Number(row.admin_status) === 1,
-      negotiated_mbps: Number(row.high_speed_mbps || 0) || (Number(row.speed_bps || 0) / 1_000_000) || null,
-    }));
+    return [...map.values()]
+      .sort((a, b) => a.index - b.index)
+      .map((row) => ({
+        ...row,
+        display_name: row.name || row.description || `if${row.index}`,
+        link_up: Number(row.oper_status) === 1,
+        admin_up: Number(row.admin_status) === 1,
+        negotiated_mbps:
+          Number(row.high_speed_mbps || 0) ||
+          (Number(row.speed_bps || 0) / 1_000_000) ||
+          null,
+      }));
   });
+}
+
+function isMikroTik(target, system) {
+  const vendor = String(target?.vendor || '').trim().toLowerCase();
+  const objectId = normalizeOidValue(system?.sys_object_id);
+  const descr = String(system?.sys_descr || '').toLowerCase();
+  return vendor === 'mikrotik' || objectId.startsWith('1.3.6.1.4.1.14988') || descr.includes('routeros');
+}
+
+async function getMikroTikMetrics(target) {
+  return withSession(target, async (session) => {
+    const [cpuRows, typeRows, unitRows, sizeRows, usedRows] = await Promise.all([
+      subtree(session, OIDS.hrProcessorLoad),
+      subtree(session, OIDS.hrStorageType),
+      subtree(session, OIDS.hrStorageAllocationUnits),
+      subtree(session, OIDS.hrStorageSize),
+      subtree(session, OIDS.hrStorageUsed),
+    ]);
+
+    const cpuValues = cpuRows
+      .map((row) => Number(row.value))
+      .filter((value) => Number.isFinite(value) && value >= 0 && value <= 100);
+
+    const cpuPercent = cpuValues.length
+      ? Number((cpuValues.reduce((sum, value) => sum + value, 0) / cpuValues.length).toFixed(1))
+      : null;
+
+    const storage = new Map();
+    const apply = (rows, base, field) => {
+      for (const row of rows) {
+        const idx = indexFromOid(base, row.oid);
+        if (!storage.has(idx)) storage.set(idx, { index: idx });
+        storage.get(idx)[field] = row.value;
+      }
+    };
+
+    apply(typeRows, OIDS.hrStorageType, 'type');
+    apply(unitRows, OIDS.hrStorageAllocationUnits, 'allocation_units');
+    apply(sizeRows, OIDS.hrStorageSize, 'size_units');
+    apply(usedRows, OIDS.hrStorageUsed, 'used_units');
+
+    let ramRow = [...storage.values()].find(
+      (row) => normalizeOidValue(row.type) === OIDS.hrStorageRam
+    );
+
+    // RouterOS has historically exposed RAM at index 65536. Keep this only
+    // as a compatibility fallback if hrStorageType is absent on an older box.
+    if (!ramRow) ramRow = storage.get('65536') || null;
+
+    let memoryPercent = null;
+    let totalMemoryBytes = null;
+    let usedMemoryBytes = null;
+    let freeMemoryBytes = null;
+
+    if (ramRow) {
+      const allocationUnits = Number(ramRow.allocation_units);
+      const sizeUnits = Number(ramRow.size_units);
+      const usedUnits = Number(ramRow.used_units);
+
+      if (
+        Number.isFinite(allocationUnits) && allocationUnits > 0 &&
+        Number.isFinite(sizeUnits) && sizeUnits > 0 &&
+        Number.isFinite(usedUnits) && usedUnits >= 0
+      ) {
+        totalMemoryBytes = allocationUnits * sizeUnits;
+        usedMemoryBytes = allocationUnits * usedUnits;
+        freeMemoryBytes = Math.max(0, totalMemoryBytes - usedMemoryBytes);
+        memoryPercent = Number(((usedMemoryBytes / totalMemoryBytes) * 100).toFixed(1));
+      }
+    }
+
+    return {
+      source: 'snmp',
+      profile: 'mikrotik',
+      cpu_percent: cpuPercent,
+      memory_percent: memoryPercent,
+      total_memory_bytes: totalMemoryBytes,
+      used_memory_bytes: usedMemoryBytes,
+      free_memory_bytes: freeMemoryBytes,
+    };
+  });
+}
+
+async function getDeviceMetrics(target, system) {
+  if (isMikroTik(target, system)) return getMikroTikMetrics(target);
+  return null;
 }
 
 async function pollTarget(target) {
   const started = Date.now();
-  const [system, interfaces] = await Promise.all([getSystemInfo(target), getInterfaces(target)]);
-  return { ok: true, host: target.host, name: target.name || system.sys_name || target.host, system, interfaces, duration_ms: Date.now() - started };
+  const [system, interfaces] = await Promise.all([
+    getSystemInfo(target),
+    getInterfaces(target),
+  ]);
+
+  let metrics = null;
+  if (target.alert_high_cpu === true || target.alert_high_memory === true) {
+    // Metric collection is optional. A missing vendor metric must not make
+    // interface/system SNMP polling look unreachable.
+    try {
+      metrics = await getDeviceMetrics(target, system);
+    } catch (error) {
+      metrics = {
+        source: 'snmp',
+        error: error.message,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    host: target.host,
+    name: target.name || system.sys_name || target.host,
+    system,
+    interfaces,
+    metrics,
+    duration_ms: Date.now() - started,
+  };
 }
 
-module.exports = { OIDS, createSession, getSystemInfo, getInterfaces, pollTarget };
+module.exports = {
+  OIDS,
+  createSession,
+  getSystemInfo,
+  getInterfaces,
+  getMikroTikMetrics,
+  getDeviceMetrics,
+  pollTarget,
+};

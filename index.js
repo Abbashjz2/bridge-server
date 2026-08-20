@@ -866,12 +866,27 @@ async function fetchBridgeMonitoringTargets() {
           device_type: device.device_type,
           model: device.model,
           snmp_enabled: true,
+          api_enabled: monitoring.api_enabled === true,
           poll_interval_seconds: monitoring.poll_interval_seconds || 60,
           alert_link_down: alerts.link_down ?? monitoring.alert_link_down ?? true,
           alert_speed_degraded: alerts.speed_degraded ?? alerts.interface_speed ?? monitoring.alert_speed_degraded ?? true,
           alert_snmp_unreachable:
             alerts.snmp_unreachable ?? alerts.device_unreachable ?? alerts.device_offline ?? true,
           min_interface_speed_mbps: monitoring.min_interface_speed_mbps || 0,
+          alert_high_cpu:
+            alerts.high_cpu ?? monitoring.alert_high_cpu ?? false,
+          alert_high_memory:
+            alerts.high_memory ?? monitoring.alert_high_memory ?? false,
+          cpu_threshold_percent:
+            monitoring.cpu_threshold_percent ??
+            monitoring.cpu_threshold ??
+            monitoring.high_cpu_threshold ??
+            null,
+          memory_threshold_percent:
+            monitoring.memory_threshold_percent ??
+            monitoring.memory_threshold ??
+            monitoring.high_memory_threshold ??
+            null,
           interfaces: Array.isArray(device.interfaces)
             ? device.interfaces.map((iface) => ({
                 interface_index: iface.interface_index,
@@ -904,6 +919,7 @@ async function fetchBridgeMonitoringTargets() {
     clearTimeout(timeout);
   }
 }
+
 
 async function reportDiscoveredInterfaces(target, snapshot) {
   if (CONFIG.LOCAL_DEV_MODE || !target?.device_id) return;
