@@ -246,6 +246,76 @@ const deviceHealthReporter = createDeviceHealthReporter({
   getBridgeToken: () =>
     remoteCommandService.getBridgeToken(),
 });
+
+// ICMP supplies reachability, latency and loss. SNMP snapshots supply the
+// device metrics that ICMP cannot contain. Keep the latest bounded snapshot
+// in memory and merge it into the next canonical ping health report.
+const deviceMetricsCache = new Map();
+
+function finiteMetric(value, { min = 0, max = Infinity } = {}) {
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === 'string' && value.trim() === '')
+  ) {
+    return null;
+  }
+
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.min(max, Math.max(min, number));
+}
+
+function cacheSnmpDeviceMetrics(target, snapshot) {
+  const deviceId = target?.device_id || target?.id;
+  if (!deviceId) return;
+
+  const metrics = snapshot?.metrics || {};
+  const uptimeTicks = finiteMetric(snapshot?.system?.sys_uptime_ticks);
+  const uptimeSeconds = uptimeTicks === null
+    ? null
+    : Math.floor(uptimeTicks / 100);
+  const cpuPercent = finiteMetric(metrics.cpu_percent, { min: 0, max: 100 });
+  const memoryPercent = finiteMetric(metrics.memory_percent, { min: 0, max: 100 });
+
+  if (uptimeSeconds === null && cpuPercent === null && memoryPercent === null) {
+    deviceMetricsCache.delete(String(deviceId));
+    return;
+  }
+
+  const observedAtMs = Date.now();
+  const pollSeconds = finiteMetric(target.poll_interval_seconds, { min: 10, max: 3600 }) || 60;
+  const maxAgeMs = Math.max(120000, Math.min(900000, pollSeconds * 3000));
+
+  deviceMetricsCache.set(String(deviceId), {
+    observedAtMs,
+    maxAgeMs,
+    uptime_seconds: uptimeSeconds,
+    cpu_percent: cpuPercent,
+    memory_percent: memoryPercent,
+    metrics: {
+      metrics_source: 'snmp',
+      metrics_observed_at: new Date(observedAtMs).toISOString(),
+    },
+  });
+}
+
+function getCachedDeviceMetrics(deviceId) {
+  const cached = deviceMetricsCache.get(String(deviceId));
+  if (!cached) return null;
+
+  if (Date.now() - cached.observedAtMs > cached.maxAgeMs) {
+    deviceMetricsCache.delete(String(deviceId));
+    return null;
+  }
+
+  return {
+    uptime_seconds: cached.uptime_seconds,
+    cpu_percent: cached.cpu_percent,
+    memory_percent: cached.memory_percent,
+    metrics: cached.metrics,
+  };
+}
 const {
   resolveDevice,
 } = createDeviceCache({
@@ -264,6 +334,7 @@ const monitorService = createMonitorService({
     remoteCommandService.getBridgeToken(),
     sendTelegram: telegramService.sendTelegram,
     reportDeviceHealth: deviceHealthReporter.reportSamples,
+    getSupplementalMetrics: getCachedDeviceMetrics,
 });
 const deviceRoutes = createDeviceRoutes({
   config: CONFIG,
@@ -877,6 +948,7 @@ async function fetchBridgeMonitoringTargets() {
           model: device.model,
           snmp_enabled: true,
           api_enabled: monitoring.api_enabled === true,
+          collect_device_metrics: monitoring.collect_device_metrics !== false,
           poll_interval_seconds: monitoring.poll_interval_seconds || 60,
           alert_link_down: alerts.link_down ?? monitoring.alert_link_down ?? true,
           alert_speed_degraded: alerts.speed_degraded ?? alerts.interface_speed ?? monitoring.alert_speed_degraded ?? true,
@@ -983,10 +1055,15 @@ async function reportDiscoveredInterfaces(target, snapshot) {
   }
 }
 
+async function handleSnmpSnapshot(target, snapshot) {
+  cacheSnmpDeviceMetrics(target, snapshot);
+  await reportDiscoveredInterfaces(target, snapshot);
+}
+
 const snmpMonitorService = createSnmpMonitor({
   getTargets: fetchBridgeMonitoringTargets,
   sendTelegram: telegramService.sendTelegram,
-  onSnapshot: reportDiscoveredInterfaces,
+  onSnapshot: handleSnmpSnapshot,
   log,
   intervalMs: CONFIG.SNMP_MONITOR_INTERVAL_MS,
 });
@@ -1272,7 +1349,4 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Run async work with a concurrency limit to avoid spawning too many
 // child ping processes at once.
-
-
-
 

@@ -283,9 +283,15 @@ async function pollTarget(target) {
   ]);
 
   let metrics = null;
-  if (target.alert_high_cpu === true || target.alert_high_memory === true) {
-    // Metric collection is optional. A missing vendor metric must not make
-    // interface/system SNMP polling look unreachable.
+  const collectDeviceMetrics =
+    target.collect_device_metrics !== false ||
+    target.alert_high_cpu === true ||
+    target.alert_high_memory === true;
+
+  if (collectDeviceMetrics) {
+    // Device metrics feed canonical health as well as optional alerts. A
+    // missing vendor metric must not make interface/system SNMP polling look
+    // unreachable.
     try {
       metrics = await getDeviceMetrics(target, system);
     } catch (error) {

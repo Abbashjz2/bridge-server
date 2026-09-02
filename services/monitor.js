@@ -7,6 +7,7 @@ function createMonitorService({
   getBridgeToken,
   sendTelegram,
   reportDeviceHealth,
+  getSupplementalMetrics,
   fetchImpl = fetch,
   execFileImpl = execFile,
 }) {
@@ -330,6 +331,17 @@ function createMonitorService({
           : 'offline';
 
         const deviceId = device.device_id || device.id;
+        let supplementalMetrics = null;
+
+        if (deviceId && typeof getSupplementalMetrics === 'function') {
+          try {
+            supplementalMetrics = await getSupplementalMetrics(deviceId, device);
+          } catch (error) {
+            // Optional device metrics must never stop reachability reporting.
+            log(`monitor: supplemental metrics unavailable for ${deviceId}: ${error.message}`);
+          }
+        }
+
         const healthSample = deviceId
           ? {
               device_id: deviceId,
@@ -337,12 +349,13 @@ function createMonitorService({
               latency_ms: probe.latencyMs,
               packet_loss_percent: probe.packetLossPercent,
               source: 'ping',
-              uptime_seconds: null,
-              cpu_percent: null,
-              memory_percent: null,
+              uptime_seconds: supplementalMetrics?.uptime_seconds ?? null,
+              cpu_percent: supplementalMetrics?.cpu_percent ?? null,
+              memory_percent: supplementalMetrics?.memory_percent ?? null,
               error: alive ? null : 'ping_timeout',
               metrics: {
                 attempts: probe.attempts,
+                ...(supplementalMetrics?.metrics || {}),
               },
             }
           : null;

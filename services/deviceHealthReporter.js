@@ -3,6 +3,14 @@ const fetch = require('node-fetch');
 const ALLOWED_SOURCES = new Set(['ping', 'snmp', 'api']);
 
 function finiteNumber(value, { min = -Infinity, max = Infinity } = {}) {
+  if (
+    value === null ||
+    value === undefined ||
+    (typeof value === 'string' && value.trim() === '')
+  ) {
+    return null;
+  }
+
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
   return Math.min(max, Math.max(min, number));
