@@ -6,9 +6,13 @@ function createMonitorService({
   log,
   getBridgeToken,
   sendTelegram,
+  reportDeviceHealth,
+  fetchImpl = fetch,
+  execFileImpl = execFile,
 }) {
   const monitorState = new Map();
   let monitorTimer = null;
+  let monitorTickRunning = false;
 
   function pingOnce(
     host,
@@ -55,7 +59,7 @@ function createMonitorService({
 
       const startedAt = Date.now();
 
-      execFile(
+      execFileImpl(
         'ping',
         args,
         {
@@ -207,7 +211,7 @@ function createMonitorService({
         `Bearer ${config.SUPABASE_ANON_KEY}`;
     }
 
-    const response = await fetch(
+    const response = await fetchImpl(
       `${config.SUPABASE_URL}/functions/v1/monitor-devices`,
       {
         method: 'POST',
@@ -245,26 +249,36 @@ function createMonitorService({
   }
 }
 
-  async function confirmedPing(host) {
-    let result = await pingOnce(host, 16, 1000);
+  async function probeDevice(host) {
+    const maxAttempts = Math.max(
+      1,
+      1 + (Number(config.MONITOR_RETRY_COUNT) || 0)
+    );
+    let attempts = 0;
+    let failures = 0;
 
-    if (result.up) {
-      return true;
-    }
-
-    for (
-      let attempt = 0;
-      attempt < config.MONITOR_RETRY_COUNT;
-      attempt += 1
-    ) {
-      result = await pingOnce(host, 16, 1000);
+    while (attempts < maxAttempts) {
+      attempts += 1;
+      const result = await pingOnce(host, 16, 1000);
 
       if (result.up) {
-        return true;
+        return {
+          reachable: true,
+          latencyMs: result.rttMs,
+          packetLossPercent: Math.round((failures / attempts) * 100),
+          attempts,
+        };
       }
+
+      failures += 1;
     }
 
-    return false;
+    return {
+      reachable: false,
+      latencyMs: null,
+      packetLossPercent: 100,
+      attempts,
+    };
   }
 
   async function asyncPool(
@@ -305,14 +319,33 @@ function createMonitorService({
       return;
     }
 
-    await asyncPool(
+    const samples = await asyncPool(
       Math.max(1, config.MONITOR_CONCURRENCY),
       devices,
       async (device) => {
-        const alive = await confirmedPing(device.ip);
+        const probe = await probeDevice(device.ip);
+        const alive = probe.reachable;
         const status = alive
           ? 'online'
           : 'offline';
+
+        const deviceId = device.device_id || device.id;
+        const healthSample = deviceId
+          ? {
+              device_id: deviceId,
+              reachable: alive,
+              latency_ms: probe.latencyMs,
+              packet_loss_percent: probe.packetLossPercent,
+              source: 'ping',
+              uptime_seconds: null,
+              cpu_percent: null,
+              memory_percent: null,
+              error: alive ? null : 'ping_timeout',
+              metrics: {
+                attempts: probe.attempts,
+              },
+            }
+          : null;
 
         const previous = monitorState.get(device.ip);
         const now = Date.now();
@@ -335,7 +368,7 @@ function createMonitorService({
             pendingOfflineSince: null,
           });
 
-          return;
+          return healthSample;
         }
 
         if (
@@ -355,7 +388,7 @@ function createMonitorService({
               pendingOfflineSince: pendingSince,
             });
 
-            return;
+            return healthSample;
           }
         } else if (
           status === 'online' &&
@@ -367,7 +400,7 @@ function createMonitorService({
           });
 
           if (previous.status === 'online') {
-            return;
+            return healthSample;
           }
         }
 
@@ -445,8 +478,20 @@ function createMonitorService({
             pendingOfflineSince: null,
           });
         }
+
+        return healthSample;
       }
     );
+
+    const validSamples = samples.filter(Boolean);
+    if (validSamples.length && typeof reportDeviceHealth === 'function') {
+      try {
+        await reportDeviceHealth(validSamples);
+      } catch (error) {
+        // Cloud reporting must never stop local monitoring or Telegram alerts.
+        log(`Device health report failed: ${error.message}`);
+      }
+    }
 
     log(
       `monitor tick: ${devices.length} devices ` +
@@ -456,23 +501,21 @@ function createMonitorService({
 
   function start() {
     if (!config.TENANT_ID) {
-      log(
-        'Telegram monitor: DISABLED (TENANT_ID not set)'
-      );
+      log('Device monitor: DISABLED (TENANT_ID not set)');
 
       return;
     }
 
-    if (
-  config.TELEGRAM_ENABLED === false ||
-  !config.TELEGRAM_BOT_TOKEN ||
-  !config.TELEGRAM_CHAT_ID
-) {
-      log(
-        'Telegram monitor: DISABLED ' +
-          '(TELEGRAM_BOT_TOKEN/CHAT_ID not set)'
-      );
+    const telegramAlertsEnabled =
+      config.TELEGRAM_ENABLED !== false &&
+      Boolean(config.TELEGRAM_BOT_TOKEN) &&
+      Boolean(config.TELEGRAM_CHAT_ID);
+    const healthReportingEnabled =
+      config.DEVICE_HEALTH_REPORT_ENABLED !== false &&
+      typeof reportDeviceHealth === 'function';
 
+    if (!telegramAlertsEnabled && !healthReportingEnabled) {
+      log('Device monitor: DISABLED (Telegram alerts and health reporting disabled)');
       return;
     }
 
@@ -481,20 +524,34 @@ function createMonitorService({
     }
 
     log(
-      `Telegram monitor: ENABLED, ` +
+      `Device monitor: ENABLED, ` +
         `interval=${config.MONITOR_INTERVAL_MS}ms, ` +
         `retry=${config.MONITOR_RETRY_COUNT}, ` +
-        `concurrency=${config.MONITOR_CONCURRENCY}`
+        `concurrency=${config.MONITOR_CONCURRENCY}, ` +
+        `telegram_alerts=${telegramAlertsEnabled}, ` +
+        `health_reporting=${healthReportingEnabled}`
     );
 
-    monitorTick().catch((error) => {
-      log(`monitor tick error: ${error.message}`);
-    });
+    const runScheduledTick = async () => {
+      if (monitorTickRunning) {
+        log('monitor tick skipped: previous tick still running');
+        return;
+      }
+
+      monitorTickRunning = true;
+      try {
+        await monitorTick();
+      } catch (error) {
+        log(`monitor tick error: ${error.message}`);
+      } finally {
+        monitorTickRunning = false;
+      }
+    };
+
+    runScheduledTick();
 
     monitorTimer = setInterval(() => {
-      monitorTick().catch((error) => {
-        log(`monitor tick error: ${error.message}`);
-      });
+      runScheduledTick();
     }, config.MONITOR_INTERVAL_MS);
 
     monitorTimer.unref?.();

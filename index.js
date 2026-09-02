@@ -76,6 +76,9 @@ const {
   createHealthReporterService,
 } = require('./services/healthReporter');
 const {
+  createDeviceHealthReporter,
+} = require('./services/deviceHealthReporter');
+const {
   createCommandExecutor,
 } = require('./services/commandExecutor');
 const UpdateInstallerService = require('./services/UpdateInstallerService');
@@ -237,6 +240,12 @@ const telegramService =
     config: CONFIG,
     log,
   });
+const deviceHealthReporter = createDeviceHealthReporter({
+  config: CONFIG,
+  log,
+  getBridgeToken: () =>
+    remoteCommandService.getBridgeToken(),
+});
 const {
   resolveDevice,
 } = createDeviceCache({
@@ -254,6 +263,7 @@ const monitorService = createMonitorService({
     getBridgeToken: () =>
     remoteCommandService.getBridgeToken(),
     sendTelegram: telegramService.sendTelegram,
+    reportDeviceHealth: deviceHealthReporter.reportSamples,
 });
 const deviceRoutes = createDeviceRoutes({
   config: CONFIG,
@@ -1030,6 +1040,9 @@ async function buildMetricsPayload() {
   health_reporter:
     healthReporterService.getStatus(),
 
+  device_health_reporter:
+    deviceHealthReporter.getStatus(),
+
   snmp_monitor:
     snmpMonitorService.getStatus(),
 },
@@ -1259,7 +1272,6 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Run async work with a concurrency limit to avoid spawning too many
 // child ping processes at once.
-
 
 
 

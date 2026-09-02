@@ -1,12 +1,13 @@
 {
   "name": "billflow-bridge",
-  "version": "1.0.54",
+  "version": "1.0.55",
   "description": "BillFlow device services: monitor (ICMP ping), terminal (SSH WebSocket), and bridge (terminal + REST dashboard API)",
   "main": "device-bridge-server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon -L index.js",
+    "test": "node --test test/*.test.js",
     "snmp:test": "node services/scripts/snmp-test.js",
     "snmp:monitor": "node services/scripts/snmp-monitor.js"
   },

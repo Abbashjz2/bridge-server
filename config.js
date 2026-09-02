@@ -115,7 +115,7 @@ BRIDGE_HEARTBEAT_RETRY_COUNT: parseInt(
     String(process.env.TELEGRAM_ENABLED || 'true').toLowerCase() === 'true',
 
   MONITOR_INTERVAL_MS: parseInt(
-    process.env.MONITOR_INTERVAL_MS || '60000',
+    process.env.MONITOR_INTERVAL_MS || '30000',
     10
   ),
 
@@ -131,6 +131,25 @@ BRIDGE_HEARTBEAT_RETRY_COUNT: parseInt(
 
   MONITOR_SHARED_SECRET:
     process.env.MONITOR_SHARED_SECRET || '',
+
+  DEVICE_HEALTH_REPORT_ENABLED:
+    String(process.env.DEVICE_HEALTH_REPORT_ENABLED || 'true').toLowerCase() === 'true',
+
+  DEVICE_HEALTH_REPORT_URL:
+    process.env.DEVICE_HEALTH_REPORT_URL ||
+    `${process.env.SUPABASE_URL ||
+      'https://vcabaubdlvjzeczfyfgc.supabase.co'
+    }/functions/v1/report-device-health`,
+
+  DEVICE_HEALTH_REPORT_TIMEOUT_MS: parseInt(
+    process.env.DEVICE_HEALTH_REPORT_TIMEOUT_MS || '10000',
+    10
+  ),
+
+  DEVICE_HEALTH_REPORT_BATCH_SIZE: parseInt(
+    process.env.DEVICE_HEALTH_REPORT_BATCH_SIZE || '100',
+    10
+  ),
 
     LICENSE_RECHECK_MS: parseInt(
   process.env.LICENSE_RECHECK_MS ||
