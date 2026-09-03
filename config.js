@@ -163,6 +163,26 @@ BRIDGE_HEARTBEAT_RETRY_COUNT: parseInt(
       'https://vcabaubdlvjzeczfyfgc.supabase.co'
     }/functions/v1`,
 
+  TERMINAL_REDEEM_URL:
+    process.env.TERMINAL_REDEEM_URL ||
+    `${(
+      process.env.SUPABASE_FUNCTIONS_URL ||
+      `${
+        process.env.SUPABASE_URL ||
+        'https://vcabaubdlvjzeczfyfgc.supabase.co'
+      }/functions/v1`
+    ).replace(/\/+$/, '')}/redeem-terminal-session`,
+
+  TERMINAL_REDEEM_TIMEOUT_MS: parseInt(
+    process.env.TERMINAL_REDEEM_TIMEOUT_MS || '10000',
+    10
+  ),
+
+  TERMINAL_HANDSHAKE_TIMEOUT_MS: parseInt(
+    process.env.TERMINAL_HANDSHAKE_TIMEOUT_MS || '10000',
+    10
+  ),
+
   BRIDGE_API_VERSION: parseInt(
     process.env.BRIDGE_API_VERSION || '1',
     10

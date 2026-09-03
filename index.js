@@ -86,6 +86,12 @@ const {
   RemoteCommandService,
 } = require('./services/remoteCommands/RemoteCommandService');
 const { loadStaticSnmpTargets } = require('./services/snmpStaticTargets');
+const {
+  createTerminalSessionRedeemer,
+} = require('./services/terminalSessionRedeemer');
+const {
+  createTerminalGateway,
+} = require('./services/terminalGateway');
 
 function patchRouterOsEmptyReply() {
   try {
@@ -325,6 +331,11 @@ const {
   getBridgeToken: () =>
     remoteCommandService.getBridgeToken(),
 
+  log,
+});
+const terminalSessionRedeemer = createTerminalSessionRedeemer({
+  config: CONFIG,
+  getBridgeToken: () => remoteCommandService.getBridgeToken(),
   log,
 });
 const monitorService = createMonitorService({
@@ -570,209 +581,26 @@ if (url.pathname === '/commands') {
 });
 
 // ============================================================
-// WebSocket terminal — still uses SSH because the API has no shell channel.
-// Wide algorithm list so we can talk to both modern RouterOS 7.x AND legacy
-// RouterOS 6.4x boxes.
+// WebSocket terminal. The browser presents a one-time opaque grant. The
+// assigned Bridge redeems it through the cloud and receives SSH credentials
+// directly; credentials are never accepted from or returned to the browser.
 // ============================================================
 
 let activeTerminalCount = 0;
-const wss = new WebSocketServer({ server });
-wss.on('connection', (ws, req) => {
-  log(`WS terminal from ${req.socket.remoteAddress}`);
-  let ssh = null;
-let stream = null;
-let authed = false;
-let terminalCounted = false;
-
-  ws.on('message', async (raw) => {
-    let msg; try { msg = JSON.parse(raw.toString()); } catch { return; }
-    if (!authed) {
-  if (msg.type !== 'connect') {
-    ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'expected connect',
-      })
-    );
-
-    return ws.close();
-  }
-
-  const user = await jwtService.verifyJwt(msg.token);
-
-  if (!user || !user.id) {
-    ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'invalid token',
-      })
-    );
-
-    return ws.close();
-  }
-
-  const tenantId = msg.tenant_id;
-  const deviceId = msg.device_id;
-
-  if (!tenantId || !deviceId) {
-    ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'tenant_id and device_id are required',
-      })
-    );
-
-    return ws.close();
-  }
-
-  if (tenantId !== CONFIG.TENANT_ID) {
-    ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'tenant_not_allowed',
-      })
-    );
-
-    return ws.close();
-  }
-
-  let ctx;
-
-  try {
-    ctx = await resolveDevice(
-      tenantId,
-      deviceId
-    );
-  } catch (error) {
-    log(
-      `WS device resolution failed for ${deviceId}: ${error.message}`
-    );
-
-    ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: 'device_not_found',
-      })
-    );
-
-    return ws.close();
-  }
-
-  authed = true;
-if (!terminalCounted) {
-  activeTerminalCount += 1;
-  terminalCounted = true;
-}
-  ssh = new SshClient();
-
-  ssh.on('ready', () => {
-    ws.send(
-      JSON.stringify({
-        type: 'status',
-        message: `connected to ${ctx.device.name || deviceId}`,
-      })
-    );
-
-    ssh.shell(
-      {
-        term: 'xterm-256color',
-        cols: Number(msg.cols) || 80,
-        rows: Number(msg.rows) || 24,
-      },
-      (error, shellStream) => {
-        if (error) {
-          ws.send(
-            JSON.stringify({
-              type: 'error',
-              message: error.message,
-            })
-          );
-
-          return ws.close();
-        }
-
-        stream = shellStream;
-
-        shellStream.on('data', (data) => {
-          if (ws.readyState === ws.OPEN) {
-            ws.send(
-              JSON.stringify({
-                type: 'data',
-                data: data.toString('utf8'),
-              })
-            );
-          }
-        });
-
-        shellStream.stderr.on('data', (data) => {
-          if (ws.readyState === ws.OPEN) {
-            ws.send(
-              JSON.stringify({
-                type: 'data',
-                data: data.toString('utf8'),
-              })
-            );
-          }
-        });
-
-        shellStream.on('close', () => {
-          ws.close();
-          ssh.end();
-        });
-      }
-    );
-  });
-
-  ssh.on('error', (error) => {
-    ws.send(
-      JSON.stringify({
-        type: 'error',
-        message: `ssh: ${error.message}`,
-      })
-    );
-
-    ws.close();
-  });
-
-  ssh.on('close', () => {
-    ws.close();
-  });
-
-  ssh.connect({
-    host: ctx.host,
-    port: CONFIG.MIKROTIK_PORT,
-    username: ctx.user || CONFIG.MIKROTIK_USER,
-    password: ctx.pass || CONFIG.MIKROTIK_PASSWORD,
-    readyTimeout: CONFIG.SSH_TIMEOUT_MS,
-    algorithms: SSH_ALGOS,
-    debug: sshDebug,
-  });
-
-  return;
-}
-    if (msg.type === 'data' && stream) stream.write(msg.data);
-    else if (msg.type === 'resize' && stream) stream.setWindow(msg.rows, msg.cols, 0, 0);
-  });
-
-  ws.on('close', () => {
-  if (terminalCounted) {
-    activeTerminalCount = Math.max(
-      0,
-      activeTerminalCount - 1
-    );
-
-    terminalCounted = false;
-  }
-
-  try {
-    if (stream) stream.end();
-  } catch {}
-
-  try {
-    if (ssh) ssh.end();
-  } catch {}
+const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
+const handleTerminalConnection = createTerminalGateway({
+  redeemTerminalSession: terminalSessionRedeemer.redeem,
+  log,
+  SshClientClass: SshClient,
+  sshAlgorithms: SSH_ALGOS,
+  sshDebug,
+  sshReadyTimeoutMs: CONFIG.SSH_TIMEOUT_MS,
+  handshakeTimeoutMs: CONFIG.TERMINAL_HANDSHAKE_TIMEOUT_MS,
+  onActiveChange(delta) {
+    activeTerminalCount = Math.max(0, activeTerminalCount + delta);
+  },
 });
-});
+wss.on('connection', handleTerminalConnection);
 const heartbeatService = createHeartbeatService({
     config: CONFIG,
     log,
@@ -1349,4 +1177,3 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Run async work with a concurrency limit to avoid spawning too many
 // child ping processes at once.
-
