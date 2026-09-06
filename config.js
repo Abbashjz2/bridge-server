@@ -14,6 +14,13 @@ const CONFIG = {
   SUPABASE_ANON_KEY:
     process.env.SUPABASE_ANON_KEY || '',
 
+  CREDENTIAL_KEY_REGISTRATION_ENABLED:
+    String(process.env.CREDENTIAL_KEY_REGISTRATION_ENABLED || 'true').toLowerCase() === 'true',
+
+  CREDENTIAL_KEY_DIR:
+    process.env.CREDENTIAL_KEY_DIR ||
+    (process.env.BRIDGE_ENV_FILE ? '/bridge-config/credential-keys' : './data/bridge/credential-keys'),
+
   MIKROTIK_USER:
     process.env.MIKROTIK_USER || 'admin',
 

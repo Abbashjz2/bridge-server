@@ -704,6 +704,8 @@ const remoteCommandHandlers = {
 
 };
 
+const { CredentialKeyService } = require('./services/credentialKeyService');
+
 const remoteCommandService =
   new RemoteCommandService({
     config: CONFIG,
@@ -721,6 +723,12 @@ const remoteCommandService =
       );
     },
   });
+
+const credentialKeyService = new CredentialKeyService({
+  config: CONFIG,
+  getBridgeToken: () => remoteCommandService.getBridgeToken(),
+  log,
+});
 
 async function fetchBridgeMonitoringTargets() {
   if (!CONFIG.SNMP_MONITOR_ENABLED) return [];
@@ -974,6 +982,14 @@ async function startServer() {
     try {
       await remoteCommandService.start();
       log('Remote Command Service initialized.');
+
+      try {
+        await credentialKeyService.register();
+      } catch (error) {
+        // Phase 1 compatibility: key registration must never stop the existing
+        // terminal/monitoring services while shared AES credentials are active.
+        log(`Credential public-key registration deferred: ${formatError(error)}`);
+      }
     } catch (error) {
       log(
         `Failed to initialize Remote Command Service: ${formatError(error)}`
