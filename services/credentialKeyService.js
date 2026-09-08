@@ -3,6 +3,84 @@ const fs = require('fs');
 const path = require('path');
 
 const ALGORITHM = 'rsa-oaep-sha256-4096';
+const ASYMMETRIC_SCHEME = 'bridge-asymmetric-v1';
+
+
+function decodeBase64Ciphertext(value) {
+  if (typeof value !== 'string' || !value || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
+    throw new Error('invalid_credential_ciphertext');
+  }
+  const buffer = Buffer.from(value, 'base64');
+  if (buffer.length !== 512 || buffer.toString('base64') !== value) {
+    throw new Error('invalid_credential_ciphertext');
+  }
+  return buffer;
+}
+
+function readLocalKeyVersion(config) {
+  const metaPath = path.join(config.CREDENTIAL_KEY_DIR, 'device-credentials-meta.json');
+  let meta;
+  try {
+    meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+  } catch (_) {
+    throw new Error('credential_key_metadata_unavailable');
+  }
+  const version = Number(meta?.key_version);
+  if (!Number.isInteger(version) || version < 1) {
+    throw new Error('credential_key_metadata_invalid');
+  }
+  if (meta.algorithm && meta.algorithm !== ALGORITHM) {
+    throw new Error('credential_key_algorithm_mismatch');
+  }
+  return version;
+}
+
+function decryptBridgeCredential(config, credential) {
+  if (!credential || credential.scheme !== ASYMMETRIC_SCHEME) {
+    throw new Error('unsupported_credential_scheme');
+  }
+  if (credential.algorithm !== ALGORITHM) {
+    throw new Error('unsupported_credential_algorithm');
+  }
+  const keyVersion = Number(credential.key_version);
+  if (!Number.isInteger(keyVersion) || keyVersion < 1) {
+    throw new Error('invalid_credential_key_version');
+  }
+  const localVersion = readLocalKeyVersion(config);
+  if (keyVersion !== localVersion) {
+    throw new Error(`credential_key_version_mismatch:${keyVersion}:${localVersion}`);
+  }
+
+  const privatePath = path.join(config.CREDENTIAL_KEY_DIR, 'device-credentials-private.pem');
+  let privateKey;
+  try {
+    privateKey = fs.readFileSync(privatePath, 'utf8');
+  } catch (_) {
+    throw new Error('credential_private_key_unavailable');
+  }
+
+  const ciphertext = decodeBase64Ciphertext(credential.ciphertext);
+  let plaintext;
+  try {
+    plaintext = crypto.privateDecrypt(
+      {
+        key: privateKey,
+        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+        oaepHash: 'sha256',
+      },
+      ciphertext
+    );
+  } catch (_) {
+    throw new Error('credential_decryption_failed');
+  }
+
+  try {
+    return plaintext.toString('utf8');
+  } finally {
+    plaintext.fill(0);
+    ciphertext.fill(0);
+  }
+}
 
 class CredentialKeyService {
   constructor({ config, getBridgeToken, fetchImpl, log }) {
@@ -96,4 +174,9 @@ class CredentialKeyService {
   }
 }
 
-module.exports = { CredentialKeyService, ALGORITHM };
+module.exports = {
+  CredentialKeyService,
+  ALGORITHM,
+  ASYMMETRIC_SCHEME,
+  decryptBridgeCredential,
+};

@@ -1,6 +1,11 @@
 const fetch = require('node-fetch');
+const {
+  ASYMMETRIC_SCHEME,
+  decryptBridgeCredential,
+} = require('./credentialKeyService');
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
+const LEGACY_SCHEME = 'aes-256-gcm-shared-v1';
 
 class TerminalAuthorizationError extends Error {
   constructor(message = 'invalid_token') {
@@ -10,29 +15,51 @@ class TerminalAuthorizationError extends Error {
   }
 }
 
-function validateTerminalContext(value) {
+function validateBaseContext(value) {
   const port = Number(value?.ssh_port);
-
   if (
     !value ||
     typeof value.device_id !== 'string' || !value.device_id ||
     typeof value.tenant_id !== 'string' || !value.tenant_id ||
     typeof value.host !== 'string' || !value.host.trim() ||
     typeof value.ssh_user !== 'string' || !value.ssh_user.trim() ||
-    typeof value.ssh_password !== 'string' ||
     !Number.isInteger(port) || port < 1 || port > 65535
   ) {
     throw new TerminalAuthorizationError();
   }
-
   return {
     device_id: value.device_id,
     tenant_id: value.tenant_id,
     host: value.host.trim(),
     ssh_user: value.ssh_user,
-    ssh_password: value.ssh_password,
     ssh_port: port,
   };
+}
+
+function validateTerminalContext(value, config) {
+  const base = validateBaseContext(value);
+  const scheme = value?.credential?.scheme || LEGACY_SCHEME;
+
+  if (scheme === LEGACY_SCHEME) {
+    if (typeof value.ssh_password !== 'string') {
+      throw new TerminalAuthorizationError();
+    }
+    return { ...base, ssh_password: value.ssh_password };
+  }
+
+  if (scheme === ASYMMETRIC_SCHEME) {
+    if (Object.prototype.hasOwnProperty.call(value, 'ssh_password')) {
+      throw new TerminalAuthorizationError();
+    }
+    try {
+      const sshPassword = decryptBridgeCredential(config, value.credential);
+      return { ...base, ssh_password: sshPassword };
+    } catch (_) {
+      throw new TerminalAuthorizationError();
+    }
+  }
+
+  throw new TerminalAuthorizationError();
 }
 
 function createTerminalSessionRedeemer({
@@ -74,7 +101,7 @@ function createTerminalSessionRedeemer({
       }
 
       const body = await response.json().catch(() => null);
-      return validateTerminalContext(body);
+      return validateTerminalContext(body, config);
     } catch (error) {
       if (error instanceof TerminalAuthorizationError) throw error;
 

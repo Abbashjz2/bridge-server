@@ -332,6 +332,7 @@ const {
     remoteCommandService.getBridgeToken(),
 
   log,
+  config: CONFIG,
 });
 const terminalSessionRedeemer = createTerminalSessionRedeemer({
   config: CONFIG,
