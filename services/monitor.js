@@ -8,6 +8,7 @@ function createMonitorService({
   sendTelegram,
   reportDeviceHealth,
   getSupplementalMetrics,
+  collectWirelessRegistrations,
   fetchImpl = fetch,
   execFileImpl = execFile,
 }) {
@@ -339,6 +340,14 @@ function createMonitorService({
           } catch (error) {
             // Optional device metrics must never stop reachability reporting.
             log(`monitor: supplemental metrics unavailable for ${deviceId}: ${error.message}`);
+          }
+        }
+
+        if (alive && deviceId && typeof collectWirelessRegistrations === 'function') {
+          try {
+            await collectWirelessRegistrations(device);
+          } catch (error) {
+            log(`monitor: wireless registration collection unavailable for ${deviceId}: ${error.message}`);
           }
         }
 

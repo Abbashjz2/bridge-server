@@ -195,6 +195,14 @@ BRIDGE_HEARTBEAT_RETRY_COUNT: parseInt(
     10
   ),
 
+  WIRELESS_REGISTRATION_ENABLED:
+    String(process.env.WIRELESS_REGISTRATION_ENABLED || 'true').toLowerCase() === 'true',
+
+  WIRELESS_REGISTRATION_INTERVAL_MS: parseInt(
+    process.env.WIRELESS_REGISTRATION_INTERVAL_MS || '30000',
+    10
+  ),
+
   SNMP_MONITOR_ENABLED:
     String(process.env.SNMP_MONITOR_ENABLED || 'true').toLowerCase() === 'true',
 

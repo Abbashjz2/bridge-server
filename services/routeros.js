@@ -447,6 +447,45 @@ function createRouterOsService({ config, log }) {
     }));
   }
 
+  // Background collector variant. Unlike getWirelessRegistrations(), this
+  // distinguishes a successful empty registration table from a failed read.
+  // That distinction is critical: BillFlow may mark previously-seen stations
+  // offline only after a genuinely successful full snapshot.
+  async function getWirelessRegistrationsSnapshot(ctx) {
+    const commands = [
+      '/interface/wifi/registration-table/print',
+      '/interface/wireless/registration-table/print',
+    ];
+    const collected = [];
+    let successfulReads = 0;
+    const errors = [];
+
+    for (const command of commands) {
+      try {
+        const rows = await apiCmd(ctx, [command]);
+        successfulReads += 1;
+        if (Array.isArray(rows)) collected.push(...rows);
+      } catch (error) {
+        errors.push(`${command}: ${error?.message || error}`);
+      }
+    }
+
+    if (successfulReads === 0) {
+      throw new Error(`wireless_registration_read_failed: ${errors.join(' | ')}`);
+    }
+
+    // Some RouterOS combinations can expose overlapping rows. MAC is the
+    // canonical station identity for the backend, so de-duplicate here too.
+    const byMac = new Map();
+    for (const row of collected) {
+      const mac = String(row?.['mac-address'] || '').trim().toUpperCase();
+      if (!mac) continue;
+      byMac.set(mac, row);
+    }
+
+    return [...byMac.values()];
+  }
+
   async function getTraffic(ctx, iface) {
     if (
       !iface ||
@@ -736,6 +775,7 @@ function createRouterOsService({ config, log }) {
     getInterfaces,
     getLogs,
     getWirelessRegistrations,
+    getWirelessRegistrationsSnapshot,
     getTraffic,
     createAndFetchBackup,
     runAction,

@@ -43,6 +43,7 @@ const { Client: SshClient } = require('ssh2');
 const fetch = require('node-fetch');
 const { CONFIG } = require('./config');
 const { createDeviceCache } = require('./services/deviceCache');
+const { createWirelessRegistrationReporter } = require('./services/wirelessRegistrationReporter');
 const {
     createRouterOsService,
     SSH_ALGOS,
@@ -339,6 +340,13 @@ const terminalSessionRedeemer = createTerminalSessionRedeemer({
   getBridgeToken: () => remoteCommandService.getBridgeToken(),
   log,
 });
+const wirelessRegistrationReporter = createWirelessRegistrationReporter({
+  config: CONFIG,
+  log,
+  getBridgeToken: () => remoteCommandService.getBridgeToken(),
+  resolveDevice,
+  routeros,
+});
 const monitorService = createMonitorService({
     config: CONFIG,
     log,
@@ -347,6 +355,7 @@ const monitorService = createMonitorService({
     sendTelegram: telegramService.sendTelegram,
     reportDeviceHealth: deviceHealthReporter.reportSamples,
     getSupplementalMetrics: getCachedDeviceMetrics,
+    collectWirelessRegistrations: wirelessRegistrationReporter.collect,
 });
 const deviceRoutes = createDeviceRoutes({
   config: CONFIG,
