@@ -67,12 +67,52 @@ function createDeviceGateway({
         });
       }
 
-      // Test gateway intentionally supports only the initial HELLO/ACK flow.
-      // Telemetry, commands and authentication are added in later stages.
+      // After HELLO, a device may only speak for the identity established by
+      // that connection. The field is optional because the socket is already
+      // bound to deviceId, but if present it must match.
+      if (msg?.device_id != null && msg.device_id !== deviceId) {
+        send({ type: 'error', code: 'device_id_mismatch', message: 'Device ID does not match this connection' });
+        return;
+      }
+
+      if (msg?.type === 'device_status') {
+        const status = {
+          inverter_reachable: msg.inverter_reachable === true,
+          profile: typeof msg.profile === 'string' ? msg.profile.slice(0, 128) : null,
+          successful_reads: Number.isFinite(msg.successful_reads) ? msg.successful_reads : null,
+          failed_reads: Number.isFinite(msg.failed_reads) ? msg.failed_reads : null,
+          attempted_reads: Number.isFinite(msg.attempted_reads) ? msg.attempted_reads : null,
+          skipped_reads: Number.isFinite(msg.skipped_reads) ? msg.skipped_reads : null,
+          snapshot_aborted_early: msg.snapshot_aborted_early === true,
+        };
+        log(`WS device status ${deviceId}: ${JSON.stringify(status)}`);
+        return send({
+          type: 'device_status_ack',
+          device_id: deviceId,
+          bridge_time: new Date().toISOString(),
+        });
+      }
+
+      if (msg?.type === 'telemetry') {
+        // Stage 2 intentionally logs telemetry only. Nothing is persisted to
+        // Supabase/BillFlow and no command/write path is introduced here.
+        const payload = msg.data && typeof msg.data === 'object' && !Array.isArray(msg.data)
+          ? msg.data
+          : {};
+        const keys = Object.keys(payload);
+        log(`WS telemetry ${deviceId}: fields=${keys.length} data=${JSON.stringify(payload)}`);
+        return send({
+          type: 'telemetry_ack',
+          device_id: deviceId,
+          fields_received: keys.length,
+          bridge_time: new Date().toISOString(),
+        });
+      }
+
       send({
         type: 'error',
         code: 'unsupported_message',
-        message: 'Only HELLO/HELLO_ACK is enabled in this test gateway',
+        message: 'Supported messages after HELLO: device_status, telemetry',
       });
     });
 
