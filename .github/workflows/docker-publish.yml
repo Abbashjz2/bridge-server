@@ -57,7 +57,7 @@ jobs:
         run: |
           curl --fail-with-body --show-error --silent \
             -X POST \
-            "https://vcabaubdlvjzeczfyfgc.supabase.co/functions/v1/bridge-publish-release" \
+            ""https://thrynawexvoubvpgocvp.supabase.co/functions/v1/bridge-publish-release"" \
             -H "Content-Type: application/json" \
             -H "x-release-secret: ${RELEASE_SECRET}" \
             -d "{
