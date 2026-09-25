@@ -93,6 +93,9 @@ const {
 const {
   createTerminalGateway,
 } = require('./services/terminalGateway');
+const {
+  createDeviceGateway,
+} = require('./services/deviceGateway');
 
 function patchRouterOsEmptyReply() {
   try {
@@ -597,7 +600,11 @@ if (url.pathname === '/commands') {
 // ============================================================
 
 let activeTerminalCount = 0;
-const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
+// Keep the existing terminal WebSocket behavior on every path except the
+// dedicated ESP32 test path. Using noServer lets the HTTP upgrade event route
+// the two gateways without changing terminalGateway itself.
+const terminalWss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+const deviceWss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
 const handleTerminalConnection = createTerminalGateway({
   redeemTerminalSession: terminalSessionRedeemer.redeem,
   log,
@@ -610,7 +617,25 @@ const handleTerminalConnection = createTerminalGateway({
     activeTerminalCount = Math.max(0, activeTerminalCount + delta);
   },
 });
-wss.on('connection', handleTerminalConnection);
+terminalWss.on('connection', handleTerminalConnection);
+
+const handleDeviceConnection = createDeviceGateway({ log });
+deviceWss.on('connection', handleDeviceConnection);
+
+server.on('upgrade', (req, socket, head) => {
+  let pathname;
+  try {
+    pathname = new URL(req.url, `http://${req.headers.host || 'localhost'}`).pathname;
+  } catch {
+    socket.destroy();
+    return;
+  }
+
+  const targetWss = pathname === '/device/ws' ? deviceWss : terminalWss;
+  targetWss.handleUpgrade(req, socket, head, (ws) => {
+    targetWss.emit('connection', ws, req);
+  });
+});
 const heartbeatService = createHeartbeatService({
     config: CONFIG,
     log,
@@ -1178,14 +1203,13 @@ try {
   routeros.closeAll();
 
   // Close WebSocket clients.
-  for (const client of wss.clients) {
-    try {
-      client.close(
-        1001,
-        'Server shutting down'
-      );
-    } catch {
-      // Ignore close errors.
+  for (const websocketServer of [terminalWss, deviceWss]) {
+    for (const client of websocketServer.clients) {
+      try {
+        client.close(1001, 'Server shutting down');
+      } catch {
+        // Ignore close errors.
+      }
     }
   }
 
