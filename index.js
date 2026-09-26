@@ -96,6 +96,7 @@ const {
 const {
   createDeviceGateway,
 } = require('./services/deviceGateway');
+const { createMonitoringDeviceTelemetryReporter } = require('./services/monitoringDeviceTelemetryReporter');
 
 function patchRouterOsEmptyReply() {
   try {
@@ -619,11 +620,19 @@ const handleTerminalConnection = createTerminalGateway({
 });
 terminalWss.on('connection', handleTerminalConnection);
 
+const monitoringTelemetryReporter = createMonitoringDeviceTelemetryReporter({
+  config: CONFIG,
+  log,
+  getBridgeToken: () => remoteCommandService.getBridgeToken(),
+});
+monitoringTelemetryReporter.start();
+
 const handleDeviceConnection = createDeviceGateway({
   log,
   getBridgeToken: () => remoteCommandService.getBridgeToken(),
   functionsUrl: CONFIG.SUPABASE_FUNCTIONS_URL,
   supabaseAnonKey: CONFIG.SUPABASE_ANON_KEY,
+  onSnapshot: (snapshot) => monitoringTelemetryReporter.enqueue(snapshot),
 });
 deviceWss.on('connection', handleDeviceConnection);
 

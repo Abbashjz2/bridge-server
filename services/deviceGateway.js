@@ -10,6 +10,7 @@ function createDeviceGateway({
   supabaseAnonKey = '',
   fetchImpl = global.fetch,
   handshakeTimeoutMs = DEFAULT_HANDSHAKE_TIMEOUT_MS,
+  onSnapshot = null,
 }) {
   if (typeof getBridgeToken !== 'function') throw new Error('deviceGateway requires getBridgeToken');
   if (!functionsUrl) throw new Error('deviceGateway requires functionsUrl');
@@ -42,6 +43,7 @@ function createDeviceGateway({
     let deviceId = null;
     let closed = false;
     let authInFlight = false;
+    let latestDeviceStatus = null;
 
     const send = (payload) => {
       if (ws.readyState === 1) ws.send(JSON.stringify(payload));
@@ -160,23 +162,34 @@ function createDeviceGateway({
         return;
       }
       if (msg?.type === 'device_status') {
-        const status = {
-          inverter_reachable: msg.inverter_reachable === true,
+        const pollInterval = Number(msg.poll_interval_seconds);
+        latestDeviceStatus = {
+          firmware_version: typeof msg.firmware_version === 'string' ? msg.firmware_version.slice(0, 64) : null,
+          poll_interval_seconds: Number.isInteger(pollInterval) && pollInterval >= 5 && pollInterval <= 3600 ? pollInterval : 10,
+          uptime_seconds: Number.isFinite(msg.uptime_seconds) && msg.uptime_seconds >= 0 ? msg.uptime_seconds : null,
+          wifi_rssi: Number.isFinite(msg.wifi_rssi) ? msg.wifi_rssi : null,
           profile: typeof msg.profile === 'string' ? msg.profile.slice(0, 128) : null,
-          successful_reads: Number.isFinite(msg.successful_reads) ? msg.successful_reads : null,
-          failed_reads: Number.isFinite(msg.failed_reads) ? msg.failed_reads : null,
-          attempted_reads: Number.isFinite(msg.attempted_reads) ? msg.attempted_reads : null,
-          skipped_reads: Number.isFinite(msg.skipped_reads) ? msg.skipped_reads : null,
-          snapshot_aborted_early: msg.snapshot_aborted_early === true,
         };
-        log(`WS device status ${deviceId}: ${JSON.stringify(status)}`);
+        log(`WS device status ${deviceId}: ${JSON.stringify(latestDeviceStatus)}`);
         return send({ type: 'device_status_ack', device_id: deviceId, bridge_time: new Date().toISOString() });
       }
       if (msg?.type === 'telemetry') {
-        const payload = msg.data && typeof msg.data === 'object' && !Array.isArray(msg.data) ? msg.data : {};
-        const keys = Object.keys(payload);
-        log(`WS telemetry ${deviceId}: fields=${keys.length} data=${JSON.stringify(payload)}`);
-        return send({ type: 'telemetry_ack', device_id: deviceId, fields_received: keys.length, bridge_time: new Date().toISOString() });
+        const asObject = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        const readHealth = asObject(msg.read_health);
+        const telemetry = asObject(msg.telemetry);
+        const settings = asObject(msg.settings);
+        const fieldsReceived = Object.keys(readHealth).length + Object.keys(telemetry).length + Object.keys(settings).length;
+        log(`WS telemetry ${deviceId}: read_health=${Object.keys(readHealth).length} telemetry=${Object.keys(telemetry).length} settings=${Object.keys(settings).length}`);
+        if (typeof onSnapshot === 'function') {
+          onSnapshot({
+            esp32_device_id: deviceId,
+            device_status: latestDeviceStatus,
+            read_health: readHealth,
+            telemetry,
+            settings,
+          });
+        }
+        return send({ type: 'telemetry_ack', device_id: deviceId, fields_received: fieldsReceived, bridge_time: new Date().toISOString() });
       }
       send({ type: 'error', code: 'unsupported_message', message: 'Supported messages after HELLO: device_status, telemetry' });
     });
