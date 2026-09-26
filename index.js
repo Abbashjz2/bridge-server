@@ -619,7 +619,12 @@ const handleTerminalConnection = createTerminalGateway({
 });
 terminalWss.on('connection', handleTerminalConnection);
 
-const handleDeviceConnection = createDeviceGateway({ log });
+const handleDeviceConnection = createDeviceGateway({
+  log,
+  getBridgeToken: () => remoteCommandService.getBridgeToken(),
+  functionsUrl: CONFIG.SUPABASE_FUNCTIONS_URL,
+  supabaseAnonKey: CONFIG.SUPABASE_ANON_KEY,
+});
 deviceWss.on('connection', handleDeviceConnection);
 
 server.on('upgrade', (req, socket, head) => {
